@@ -22,6 +22,7 @@ from services.rag.rag_service import RAGService
 from services.sqlService import SQLService
 from services.invoiceService import InvoiceService
 from services.webSearchService import WebSearchService
+from services.trip_planner import TripPlanningAgent
 import io
 
 # Set up logging configuration
@@ -46,6 +47,9 @@ class ChatService:
         
         # Initialize Web Search service for real-time web data
         self.web_search_service = WebSearchService()
+        
+        # Initialize Trip Planning service for vacation planning
+        self.trip_planning_agent = TripPlanningAgent()
         
         # Hugging Face endpoints
         self.HF_SD_MODEL_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
@@ -832,6 +836,55 @@ EXTRACTED TEXT CONTENT:
         question_lower = question.lower()
         return any(keyword in question_lower for keyword in file_keywords)
     
+    def _is_trip_planning_question(self, question: str) -> bool:
+        """Detect if a question is asking about trip planning or vacation planning"""
+        trip_keywords = [
+            'plan a trip', 'trip to', 'vacation to', 'visit', 'travel to', 'holiday to',
+            'itinerary', 'places to visit', 'tourist attractions', 'sightseeing',
+            'day trip', 'weekend trip', 'vacation plan', 'travel plan', 'tour',
+            'explore', 'destinations', 'trip planner', 'travel guide',
+            'where to go', 'what to see', 'travel recommendations',
+            'honeymoon trip', 'family trip', 'solo trip', 'group trip',
+            'business trip', 'adventure trip', 'road trip', 'backpacking',
+            'city break', 'getaway', 'excursion', 'journey'
+        ]
+        
+        question_lower = question.lower()
+        
+        # Check for trip-related keywords
+        for keyword in trip_keywords:
+            if keyword in question_lower:
+                logger.info(f"🌴 TRIP PLANNING QUESTION DETECTED - Keyword: '{keyword}'")
+                return True
+        
+        # Enhanced patterns for natural language travel queries
+        location_patterns = [
+            # Handle "want to go to [location]" patterns
+            r'want\s+to\s+go\s+(?:to\s+)?[A-Za-z\s,]+',
+            r'want\s+to\s+go\s+for\s+[A-Za-z\s,]+',
+            # Handle "go to [location]" patterns
+            r'go\s+(?:to\s+)?[A-Za-z\s,]+\s+(?:next|this|in|for|\d+)',
+            r'go\s+for\s+[A-Za-z\s,]+\s+(?:next|this|in|for|\d+)',
+            # Standard patterns
+            r'to\s+[A-Za-z\s,]+\s+(?:next|this|in|for|\d+)',
+            r'visit\s+[A-Za-z\s,]+\s+(?:next|this|in|for|\d+)',
+            r'trip\s+to\s+[A-Za-z\s,]+',
+            r'\d+[-\s]day.*trip',
+            r'plan.*\d+.*day.*to',
+            # New patterns for natural language
+            r'give\s+me.*trip.*plan',
+            r'trip.*plan.*accordingly',
+            r'plan.*accordingly'
+        ]
+        
+        for pattern in location_patterns:
+            if re.search(pattern, question_lower):
+                logger.info(f"🌴 TRIP PLANNING QUESTION DETECTED - Pattern: '{pattern}'")
+                return True
+        
+        logger.info(f"❌ NOT TRIP PLANNING QUESTION - No travel context found")
+        return False
+    
     def _has_files_in_thread(self, thread_id: int, user_email: str) -> bool:
         """Check if there are any uploaded files in the current thread"""
         try:
@@ -934,6 +987,60 @@ This format allows users to easily access and verify the sources of the informat
             # Fall back to regular LLM processing
             return None
     
+    async def _handle_trip_planning_question(self, question: str, user_email: str) -> Dict[str, Any]:
+        """Handle trip planning questions using the Trip Planning Agent with intelligent auto-correction"""
+        try:
+            logger.info(f"🌴 TRIP PLANNING QUESTION DETECTED - {user_email}")
+            logger.info(f"    Question: '{question}'")
+            
+            # Extract location from question for auto-correction preview
+            location_match = re.search(r'(?:to|visit|trip to|go to|in|plan.*trip.*to)\s+([A-Za-z\s,]+?)(?:\s+(?:for|next|this|in|\d+)|\s*$)', question.lower())
+            if location_match:
+                raw_location = location_match.group(1).strip()
+                logger.info(f"🎯 Extracted location: '{raw_location}'")
+                
+                # Preview auto-correction before full processing
+                corrected_location, confidence = self.trip_planning_agent._smart_location_correction(raw_location)
+                if confidence >= 0.8 and corrected_location.lower() != raw_location.lower():
+                    logger.info(f"🔧 Auto-correction preview: '{raw_location}' → '{corrected_location}' (confidence: {confidence:.2f})")
+            
+            # Use Trip Planning Agent to generate the itinerary
+            try:
+                itinerary = self.trip_planning_agent.main(question)
+                
+                if itinerary:
+                    logger.info(f"✅ TRIP PLANNING SUCCESS - {user_email}")
+                    logger.info(f"    Generated itinerary length: {len(itinerary)} characters")
+                    
+                    return {
+                        "bot_message_content": itinerary,
+                        "image_data_base64": None,
+                        "image_mime_type": None,
+                        "video_data_base64": None,
+                        "video_mime_type": None,
+                        "is_trip_planning_response": True
+                    }
+                else:
+                    logger.error(f"❌ TRIP PLANNING ERROR - {user_email} | Empty itinerary returned")
+                    return None
+                    
+            except Exception as trip_error:
+                logger.error(f"❌ TRIP PLANNING AGENT ERROR - {user_email} | Error: {trip_error}")
+                # Return a fallback message
+                return {
+                    "bot_message_content": f"I apologize, but I encountered an issue while planning your trip. The error was: {str(trip_error)}. Please try again with a different query or check if all required services are available.",
+                    "image_data_base64": None,
+                    "image_mime_type": None,
+                    "video_data_base64": None,
+                    "video_mime_type": None,
+                    "is_trip_planning_response": True
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ TRIP PLANNING PROCESSING ERROR - {user_email} | Error: {e}")
+            # Fall back to regular LLM processing
+            return None
+    
     async def process_llm_response(self, langchain_messages: List, model: str, user_email: str, thread_id: int = None, original_question: str = None) -> Dict[str, Any]:
         """Process LLM response and handle tool calls"""
         
@@ -945,12 +1052,14 @@ This format allows users to easily access and verify the sources of the informat
             is_web_search = self.web_search_service.is_web_search_query(original_question)
             is_file_question = thread_id and self._is_file_question(original_question) and self._has_files_in_thread(thread_id, user_email)
             is_sql_question = self._is_sql_question(original_question)
+            is_trip_planning = self._is_trip_planning_question(original_question)
             
             logger.info(f"🔍 QUERY ANALYSIS - {user_email}")
             logger.info(f"    Question: '{original_question}'")
             logger.info(f"    Is Web Search Query: {is_web_search}")
             logger.info(f"    Is File Question: {is_file_question}")
             logger.info(f"    Is SQL Question: {is_sql_question}")
+            logger.info(f"    Is Trip Planning Question: {is_trip_planning}")
         
         # First priority: Check if this is a question about uploaded files
         # The logic for invoice processing has been moved to build_langchain_messages
@@ -995,6 +1104,14 @@ This format allows users to easily access and verify the sources of the informat
                 sql_result = await self._handle_sql_question(original_question, user_email)
                 if sql_result:
                     return sql_result
+        
+        # Fourth priority: Check if this is a trip planning question (only if not about files, web search, or SQL)
+        elif original_question and self._is_trip_planning_question(original_question):
+            # Only route to trip planning if it's not about files, web search, or SQL
+            if not (thread_id and self._is_file_question(original_question) and self._has_files_in_thread(thread_id, user_email)) and not self.web_search_service.is_web_search_query(original_question) and not self._is_sql_question(original_question):
+                trip_result = await self._handle_trip_planning_question(original_question, user_email)
+                if trip_result:
+                    return trip_result
         
         # Select model
         current_llm = None

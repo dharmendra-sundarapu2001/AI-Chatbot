@@ -134,7 +134,7 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
             paymentDueDate: extractField(/Payment Due Date:\s*([^\n]+)/i, text)
         };
 
-        // Extract validation results
+        // Extract validation results with improved parsing
         const validationPattern = /Validation Results:(.*?)Score:\s*(\d+)\/(\d+)\s*\((\d+)%\)/s;
         const validationMatch = text.match(validationPattern);
         
@@ -143,21 +143,23 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
 
         if (validationMatch) {
             const validationText = validationMatch[1];
-            const validationLines = validationText.split('\n').filter(line => line.trim());
+            const validationLines = validationText.split('\n').filter(line => line.trim() && line.includes(':'));
             
             validationResults = validationLines.map(line => {
-                const passMatch = line.match(/\[pass\]/i);
-                const failMatch = line.match(/\[fail\]/i);
-                const missingMatch = line.match(/\[missing\]/i);
+                // Enhanced parsing for different formats
+                const passMatch = line.match(/:\s*pass/i) || line.match(/\[pass\]/i);
+                const failMatch = line.match(/:\s*fail/i) || line.match(/\[fail\]/i);
+                const missingMatch = line.match(/:\s*missing/i) || line.match(/\[missing\]/i);
                 
                 let status = 'unknown';
                 if (passMatch) status = 'pass';
                 else if (failMatch) status = 'fail';
                 else if (missingMatch) status = 'missing';
 
-                // Extract the test description
-                const description = line.replace(/\[(pass|fail|missing)\]/i, '').replace(/—.*$/, '').trim().replace(/:$/, '');
-                const details = line.includes('—') ? line.split('—')[1].trim() : '';
+                // Extract the test description - handle both formats
+                let description = line.split(':')[0].trim().replace(/^-\s*/, '');
+                const details = line.includes('—') ? line.split('—')[1].trim() : 
+                              line.includes(' — ') ? line.split(' — ')[1].trim() : '';
 
                 return {
                     description,
@@ -286,16 +288,16 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
             switch (status) {
                 case 'pass':
                     return (
-                        <div className="flex items-center justify-center w-6 h-6 bg-green-500 rounded-full">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                        <div className="flex items-center justify-center w-7 h-7 bg-green-500 rounded-full flex-shrink-0">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
                                 <polyline points="20 6 9 17 4 12" />
                             </svg>
                         </div>
                     );
                 case 'fail':
                     return (
-                        <div className="flex items-center justify-center w-6 h-6 bg-red-500 rounded-full">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                        <div className="flex items-center justify-center w-7 h-7 bg-red-500 rounded-full flex-shrink-0">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
                                 <line x1="18" y1="6" x2="6" y2="18" />
                                 <line x1="6" y1="6" x2="18" y2="18" />
                             </svg>
@@ -303,8 +305,8 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
                     );
                 case 'missing':
                     return (
-                        <div className="flex items-center justify-center w-6 h-6 bg-yellow-500 rounded-full">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                        <div className="flex items-center justify-center w-7 h-7 bg-yellow-500 rounded-full flex-shrink-0">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
                                 <line x1="12" y1="9" x2="12" y2="13" />
                                 <circle cx="12" cy="17" r="1" />
                             </svg>
@@ -312,8 +314,8 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
                     );
                 default:
                     return (
-                        <div className="flex items-center justify-center w-6 h-6 bg-gray-500 rounded-full">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                        <div className="flex items-center justify-center w-7 h-7 bg-gray-500 rounded-full flex-shrink-0">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
                                 <circle cx="12" cy="12" r="1" />
                             </svg>
                         </div>
@@ -385,17 +387,27 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
                     </h4>
                     <div className="space-y-3">
                         {validationResults.map((result, index) => (
-                            <div key={index} className="flex items-start gap-3 p-3 bg-neutral-800/20 rounded-lg border border-neutral-600/20">
+                            <div key={index} className="flex items-start gap-4 p-4 bg-neutral-800/40 rounded-lg border border-neutral-600/30 hover:border-neutral-500/50 transition-colors">
                                 {getStatusIcon(result.status)}
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-white text-sm font-medium mb-1">
+                                    <div className="text-white text-sm font-medium mb-2 leading-relaxed">
                                         {result.description}
                                     </div>
                                     {result.details && (
-                                        <div className="text-neutral-400 text-xs">
-                                            {result.details}
+                                        <div className="text-neutral-300 text-xs bg-neutral-700/30 px-3 py-2 rounded-md border border-neutral-600/20">
+                                            <span className="font-medium text-neutral-200">Details:</span> {result.details}
                                         </div>
                                     )}
+                                </div>
+                                <div className="flex-shrink-0">
+                                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                                        result.status === 'pass' ? 'bg-green-500/20 text-green-300 border border-green-500/30' :
+                                        result.status === 'fail' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
+                                        result.status === 'missing' ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' :
+                                        'bg-gray-500/20 text-gray-300 border border-gray-500/30'
+                                    }`}>
+                                        {result.status.toUpperCase()}
+                                    </span>
                                 </div>
                             </div>
                         ))}
@@ -527,8 +539,11 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
 
     // Process content through both parsers in sequence
     const processedContent = (() => {
+        // First, remove reference numbers like [1, 2, 3] or [1] from the content
+        let cleanedContent = content.replace(/\s*\[\s*\d+(?:\s*,\s*\d+)*\s*\]/g, '');
+        
         // First parse web resources
-        const webResult = parseWebResources(content);
+        const webResult = parseWebResources(cleanedContent);
         
         // Then parse invoice analysis from the cleaned content
         const invoiceResult = parseInvoiceAnalysis(webResult.cleanContent);
