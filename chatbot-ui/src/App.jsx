@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import MessageRenderer from './components/MessageRenderer'; // Assuming MessageRenderer is in a components folder
+import TicTacToeGame from './components/TicTacToeGame';
+import TicTacToeIcon from './components/icons/TicTacToeIcon';
+import ChatIcon from './components/icons/ChatIcon';
 
 // Use Vite's import.meta.env for frontend env variables
 // IMPORTANT: Ensure your .env file has VITE_GOOGLE_CLIENT_ID=YOUR_CLIENT_ID
@@ -22,6 +25,9 @@ function App() {
     // Theme state - default to blue and include dark mode
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('isDarkMode') === 'true'); // Initialize dark mode state
     const [theme, setTheme] = useState(() => 'blue'); // Default to 'blue' theme
+    
+    // View state - for switching between chat and game
+    const [activeView, setActiveView] = useState('chat'); // 'chat' or 'game'
 
     // Chat & Thread state
     const [threads, setThreads] = useState([]);
@@ -1590,6 +1596,34 @@ function App() {
                     </div>
 
                     <div className="flex items-center gap-4">
+                        {/* Chat Icon - For switching to chat view */}
+                        <button
+                            onClick={() => setActiveView('chat')}
+                            className="p-2 rounded-lg transition-all duration-200 hover:scale-110"
+                            style={{
+                                backgroundColor: activeView === 'chat' ? modeColors.surfaceSecondary : 'transparent',
+                                color: activeView === 'chat' ? currentTheme.primary : modeColors.text,
+                                border: `1px solid ${activeView === 'chat' ? currentTheme.primary : 'transparent'}`
+                            }}
+                            title="Chat"
+                        >
+                            <ChatIcon active={activeView === 'chat'} />
+                        </button>
+                        
+                        {/* Game Icon - For switching to game view */}
+                        <button
+                            onClick={() => setActiveView('game')}
+                            className="p-2 rounded-lg transition-all duration-200 hover:scale-110"
+                            style={{
+                                backgroundColor: activeView === 'game' ? modeColors.surfaceSecondary : 'transparent',
+                                color: activeView === 'game' ? currentTheme.primary : modeColors.text,
+                                border: `1px solid ${activeView === 'game' ? currentTheme.primary : 'transparent'}`
+                            }}
+                            title="Tic-Tac-Toe Game"
+                        >
+                            <TicTacToeIcon active={activeView === 'game'} />
+                        </button>
+                        
                         {/* Black/White Mode Toggle */}
                         <button
                             onClick={handleModeToggle}
@@ -1695,37 +1729,38 @@ function App() {
                     </div>
                 </header>
 
-                {/* Chat Area */}
-                <main
-                    ref={chatContainerRef} // Assign ref to the main chat container
-                    className="flex-1 flex flex-col w-full min-h-0 overflow-y-auto relative" // Added 'relative' for scroll button positioning
-                    style={{ backgroundColor: modeColors.background }}
-                >
-                    <div className="flex flex-col gap-4 w-full max-w-5xl mx-auto py-10 px-2 sm:px-8 min-h-0">
-                        {/* Conditional rendering for chat messages based on isLoadingChat */}
-                        {isLoadingChat ? (
-                            <div className="flex w-full justify-start">
-                                <div
-                                    className="rounded-xl px-6 py-4 shadow rounded-bl-md max-w-full break-words whitespace-pre-wrap w-full flex items-center gap-2"
-                                    style={{
-                                        backgroundColor: modeColors.surface,
-                                        color: modeColors.text,
-                                        border: `1px solid ${modeColors.border}`
-                                    }}
-                                >
-                                    <span className="animate-pulse text-gray-500">Loading chat...</span>
-                                </div>
-                            </div>
-                        ) : (
-                            <>
-                                {chat.length === 0 && (activeThreadId === null || (activeThread && !activeThread.isLoading)) && (
-                                    <div className="w-full flex justify-center items-center h-40">
-                                        <span className="text-2xl" style={{ color: modeColors.textSecondary }}>
-                                            How can I help you?
-                                        </span>
+                {/* Main Content Area - Conditionally render Chat or Game */}
+                {activeView === 'chat' ? (
+                    <main
+                        ref={chatContainerRef} // Assign ref to the main chat container
+                        className="flex-1 flex flex-col w-full min-h-0 overflow-y-auto relative" // Added 'relative' for scroll button positioning
+                        style={{ backgroundColor: modeColors.background }}
+                    >
+                        <div className="flex flex-col gap-4 w-full max-w-5xl mx-auto py-10 px-2 sm:px-8 min-h-0">
+                            {/* Conditional rendering for chat messages based on isLoadingChat */}
+                            {isLoadingChat ? (
+                                <div className="flex w-full justify-start">
+                                    <div
+                                        className="rounded-xl px-6 py-4 shadow rounded-bl-md max-w-full break-words whitespace-pre-wrap w-full flex items-center gap-2"
+                                        style={{
+                                            backgroundColor: modeColors.surface,
+                                            color: modeColors.text,
+                                            border: `1px solid ${modeColors.border}`
+                                        }}
+                                    >
+                                        <span className="animate-pulse text-gray-500">Loading chat...</span>
                                     </div>
-                                )}
-                                {chat.map((msg, idx) => (
+                                </div>
+                            ) : (
+                                <>
+                                    {chat.length === 0 && (activeThreadId === null || (activeThread && !activeThread.isLoading)) && (
+                                        <div className="w-full flex justify-center items-center h-40">
+                                            <span className="text-2xl" style={{ color: modeColors.textSecondary }}>
+                                                How can I help you?
+                                            </span>
+                                        </div>
+                                    )}
+                                    {chat.map((msg, idx) => (
                                     <div
                                         key={msg.id || idx}
                                         className={`
@@ -1849,8 +1884,19 @@ function App() {
                         <div ref={chatEndRef} />
                     </div>
                 </main>
+                ) : (
+                    // Tic-Tac-Toe Game View
+                    <main 
+                        className="flex-1 flex flex-col w-full min-h-0 overflow-y-auto relative"
+                        style={{ backgroundColor: modeColors.background }}
+                    >
+                        <TicTacToeGame />
+                    </main>
+                )}
 
-                {/* Input Area - Redesigned with no border */}
+                {/* Input Area - Only show when chat view is active */}
+                {activeView === 'chat' && (
+                    /* Input Area - Redesigned with no border */
                 <div
                     className="w-full flex items-center justify-center px-8 py-4"
                     style={{
@@ -2209,6 +2255,7 @@ function App() {
                         </div>
                     </div>
                 </div>
+                )}
             </div>
         </div>
     );

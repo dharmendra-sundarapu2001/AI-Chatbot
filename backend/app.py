@@ -21,6 +21,9 @@ from services.threadService import thread_service
 from services.chatService import chat_service
 from services.sqlService import SQLService
 
+# Import Tic-Tac-Toe router
+from tic_tac_toe_routes import tic_tac_toe_router
+
 # Set up logging - disable uvicorn access logs
 logging.basicConfig(
     level=logging.INFO,
@@ -567,4 +570,8 @@ async def test_sql_connection(
         logger.error(f"❌ SQL CONNECTION EXCEPTION - {x_user_email} | Error: {e}")
         raise HTTPException(status_code=500, detail=f"Connection test failed: {str(e)}")
 
+# Register Tic-Tac-Toe router with FastAPI
+app.include_router(tic_tac_toe_router)
+
+logger.info("✅ Tic-Tac-Toe game API endpoints registered")
    

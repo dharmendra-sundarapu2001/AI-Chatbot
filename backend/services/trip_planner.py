@@ -1136,28 +1136,46 @@ class TripPlanningAgent:
                         # Create location-specific fallback names
                         category_key = category.split('.')[-1].lower()
                         
-                        fallback_names = {
-                            'attraction': f'Popular Attraction in {location_name}',
-                            'museum': f'Local Museum in {location_name}',
-                            'restaurant': f'Local Restaurant in {location_name}',
-                            'monument': f'Historic Monument in {location_name}',
-                            'park': f'City Park in {location_name}',
-                            'garden': f'Botanical Garden in {location_name}',
-                            'viewpoint': f'Scenic Viewpoint near {location_name}',
-                            'beach': f'Beach near {location_name}',
-                            'shopping_mall': f'Shopping Center in {location_name}',
-                            'cinema': f'Movie Theater in {location_name}',
-                            'gallery': f'Art Gallery in {location_name}',
-                            'zoo': f'Zoo in {location_name}',
-                            'culture': f'Cultural Center in {location_name}',
-                            'marina': f'Marina in {location_name}',
-                            'climbing': f'Adventure Sports in {location_name}',
-                            'beach_resort': f'Beach Resort near {location_name}'
-                        }
-                        fallback_name = fallback_names.get(category_key, f'Interesting Place in {location_name}')
+                        # Extract the actual place name and location details for better identification
+                        street = properties.get('street', '')
+                        address_line1 = properties.get('address_line1', '')
+                        district = properties.get('district', '')
+                        city = properties.get('city', '')
+                        specific_location = ' '.join(filter(None, [street, district, city])).strip()
                         
+                        if not specific_location and address_line1:
+                            specific_location = address_line1
+                            
+                        fallback_names = {
+                            'attraction': f'Popular Attraction at {specific_location if specific_location else location_name}',
+                            'museum': f'Local Museum at {specific_location if specific_location else location_name}',
+                            'restaurant': f'Local Restaurant at {specific_location if specific_location else location_name}',
+                            'monument': f'Historic Monument at {specific_location if specific_location else location_name}',
+                            'park': f'City Park at {specific_location if specific_location else location_name}',
+                            'garden': f'Botanical Garden at {specific_location if specific_location else location_name}',
+                            'viewpoint': f'Scenic Viewpoint at {specific_location if specific_location else location_name}',
+                            'beach': f'Beach at {specific_location if specific_location else location_name}',
+                            'shopping_mall': f'Shopping Center at {specific_location if specific_location else location_name}',
+                            'cinema': f'Movie Theater at {specific_location if specific_location else location_name}',
+                            'gallery': f'Art Gallery at {specific_location if specific_location else location_name}',
+                            'zoo': f'Zoo at {specific_location if specific_location else location_name}',
+                            'culture': f'Cultural Center at {specific_location if specific_location else location_name}',
+                            'marina': f'Marina at {specific_location if specific_location else location_name}',
+                            'climbing': f'Adventure Sports at {specific_location if specific_location else location_name}',
+                            'beach_resort': f'Beach Resort at {specific_location if specific_location else location_name}'
+                        }
+                        fallback_name = fallback_names.get(category_key, f'Interesting Place at {specific_location if specific_location else location_name}')
+                        
+                        # Use actual name if available, otherwise use enhanced fallback name with specific location
+                        place_name = properties.get('name')
+                        if not place_name:
+                            place_name = fallback_name
+                        # If we have a name but it's very generic, enhance it with the location
+                        elif len(place_name) < 10 and specific_location:
+                            place_name = f"{place_name} ({specific_location})"
+                            
                         place = {
-                            'name': properties.get('name', fallback_name),
+                            'name': place_name,
                             'category': category.split('.')[-1].title(),
                             'address': properties.get('formatted', 'Address not available'),
                             'lat': coordinates[1],
