@@ -2373,7 +2373,7 @@ function App() {
                                 onChange={(e) => {
                                     setQuestion(e.target.value);
                                     e.target.style.height = 'auto';
-                                    e.target.style.height = `${e.target.scrollHeight}px`;
+                                    e.target.style.height = (e.target.scrollHeight) + 'px';
                                 }}
                                 onKeyDown={(e) => {
                                if (e.key === 'Enter' && !e.shiftKey && !isBotTyping && !isWebSearching && !isLoadingChat) {
@@ -2388,15 +2388,12 @@ function App() {
                                 const start = inputRef.current.selectionStart;
                                 const end = inputRef.current.selectionEnd;
                                 const newValue = currentValue.substring(0, start) + pasteText + currentValue.substring(end);
-                                setQuestion(newValue);
+                               setQuestion(newValue);
                                 const newCursorPosition = start + pasteText.length;
-                                setTimeout(() => {
+                            setTimeout(() => {
                               if (inputRef.current) {
                               inputRef.current.selectionStart = newCursorPosition;
-                              inputRef.current.selectionEnd = newCursorPosition;
-                              inputRef.current.style.height = 'auto';
-                              inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
-                              inputRef.current.scrollTop = inputRef.current.scrollHeight;
+                             inputRef.current.selectionEnd = newCursorPosition;
                             }
                         }, 0);
                      }}
