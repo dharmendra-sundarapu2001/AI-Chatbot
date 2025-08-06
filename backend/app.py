@@ -197,7 +197,7 @@ async def chat(
 
 
     # Return response
-    return JSONResponse(content={
+    response_data = {
         "answer": llm_result["bot_message_content"],
         "thread_id": thread_id_val,
         "image_data_base64": llm_result["image_data_base64"],
@@ -205,7 +205,15 @@ async def chat(
         "video_data_base64": llm_result["video_data_base64"],
         "video_mime_type": llm_result["video_mime_type"],
         "websearch_info": llm_result.get("websearch_info")
-    })
+    }
+    
+    # Include file information if a file was uploaded
+    if file_data:
+        response_data["filename"] = file_data.get("filename")
+        response_data["file_type"] = file_data.get("file_type")
+        response_data["mime_type"] = file_data.get("mime_type")
+    
+    return JSONResponse(content=response_data)
 
 @app.get("/chats")
 def get_chats(request: Request, db: Session = Depends(get_db)):

@@ -78,8 +78,8 @@ class RAGService:
         
         # Initialize text splitter
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1500,
-            chunk_overlap=300,
+            chunk_size=3000,
+            chunk_overlap=500,
             length_function=len,
             separators=["\n\n", "\n", " ", ""]
         )
@@ -131,7 +131,7 @@ class RAGService:
             return []
     
     def _extract_text_from_docx(self, file_bytes: bytes, filename: str) -> List[Document]:
-        """Extract text from DOCX file"""
+        """Extract text from DOCX or DOC file"""
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_file:
                 temp_file.write(file_bytes)
@@ -158,27 +158,38 @@ class RAGService:
                 
                 full_text = "\n\n".join(text_content)
                 
+                # Determine file type for metadata
+                file_type = 'docx' if filename.lower().endswith('.docx') else 'doc'
+                
                 document = Document(
                     page_content=full_text,
                     metadata={
                         'filename': filename,
                         'source': filename,
-                        'file_type': 'docx'
+                        'file_type': file_type
                     }
                 )
                 
-                logger.info(f"📄 Extracted text from DOCX: {filename}")
+                logger.info(f"📄 Extracted text from {file_type.upper()}: {filename}")
                 return [document]
                 
             finally:
                 os.unlink(temp_file_path)
                 
         except Exception as e:
-            logger.error(f"❌ Failed to extract text from DOCX {filename}: {e}")
+            # For legacy DOC files, try to extract as plain text
+            if filename.lower().endswith('.doc'):
+                logger.warning(f"⚠️ DOCX extraction failed for {filename}, trying text extraction: {e}")
+                try:
+                    return self._extract_text_from_text(file_bytes, filename)
+                except:
+                    pass
+            
+            logger.error(f"❌ Failed to extract text from DOCX/DOC {filename}: {e}")
             return []
     
     def _extract_text_from_pptx(self, file_bytes: bytes, filename: str) -> List[Document]:
-        """Extract text from PPTX file"""
+        """Extract text from PPTX or PPT file"""
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_file:
                 temp_file.write(file_bytes)
@@ -202,23 +213,34 @@ class RAGService:
                 
                 full_text = "\n\n".join(slides_content)
                 
+                # Determine file type for metadata
+                file_type = 'pptx' if filename.lower().endswith('.pptx') else 'ppt'
+                
                 document = Document(
                     page_content=full_text,
                     metadata={
                         'filename': filename,
                         'source': filename,
-                        'file_type': 'pptx'
+                        'file_type': file_type
                     }
                 )
                 
-                logger.info(f"📄 Extracted text from PPTX: {filename}")
+                logger.info(f"📄 Extracted text from {file_type.upper()}: {filename}")
                 return [document]
                 
             finally:
                 os.unlink(temp_file_path)
                 
         except Exception as e:
-            logger.error(f"❌ Failed to extract text from PPTX {filename}: {e}")
+            # For legacy PPT files, try to extract as plain text
+            if filename.lower().endswith('.ppt'):
+                logger.warning(f"⚠️ PPTX extraction failed for {filename}, trying text extraction: {e}")
+                try:
+                    return self._extract_text_from_text(file_bytes, filename)
+                except:
+                    pass
+            
+            logger.error(f"❌ Failed to extract text from PPTX/PPT {filename}: {e}")
             return []
     
     def _extract_text_from_excel(self, file_bytes: bytes, filename: str) -> List[Document]:
@@ -237,16 +259,19 @@ class RAGService:
             
             full_text = "\n\n" + "="*50 + "\n\n".join(sheets_content)
             
+            # Determine file type for metadata
+            file_type = 'xlsx' if filename.lower().endswith('.xlsx') else 'xls'
+            
             document = Document(
                 page_content=full_text,
                 metadata={
                     'filename': filename,
                     'source': filename,
-                    'file_type': 'excel'
+                    'file_type': file_type
                 }
             )
             
-            logger.info(f"📄 Extracted text from Excel: {filename}")
+            logger.info(f"📄 Extracted text from {file_type.upper()}: {filename}")
             return [document]
             
         except Exception as e:
@@ -383,9 +408,9 @@ class RAGService:
         
         if file_type == 'pdf':
             return self._extract_text_from_pdf_bytes(file_bytes, filename)
-        elif file_type == 'docx':
+        elif file_type in ['docx', 'doc']:
             return self._extract_text_from_docx(file_bytes, filename)
-        elif file_type == 'pptx':
+        elif file_type in ['pptx', 'ppt']:
             return self._extract_text_from_pptx(file_bytes, filename)
         elif file_type in ['xlsx', 'xls']:
             return self._extract_text_from_excel(file_bytes, filename)
@@ -394,6 +419,9 @@ class RAGService:
         elif file_type == 'json':
             return self._extract_text_from_json(file_bytes, filename)
         elif file_type in ['txt', 'md']:
+            return self._extract_text_from_text(file_bytes, filename)
+        elif file_type in ['odt', 'ods', 'odp']:
+            # OpenDocument formats - treat as text for now
             return self._extract_text_from_text(file_bytes, filename)
         else:
             logger.warning(f"⚠️ Unsupported file type: {file_type} for file: {filename}")

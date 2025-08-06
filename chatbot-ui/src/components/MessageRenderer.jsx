@@ -26,6 +26,31 @@ hljs.registerLanguage('json', json);
 hljs.registerLanguage('bash', bash);
 hljs.registerLanguage('latex', latex);
 
+// Utility function to safely clean content
+const cleanContent = (content) => {
+    if (content === null || content === undefined || content === 'undefined' || content === 'null') {
+        return '';
+    }
+    if (typeof content === 'string') {
+        return content
+            .replace(/undefined/gi, '') // Remove "undefined" text
+            .replace(/null/gi, '') // Remove "null" text
+            .replace(/^\s*text\s*$/gim, '') // Remove standalone "text" strings
+            .replace(/^\s*$/, '') // Remove whitespace-only strings
+            .split('\n') // Split into lines
+            .filter(line => {
+                const trimmed = line.trim();
+                return trimmed.length > 0 && 
+                       trimmed.toLowerCase() !== 'text' && 
+                       trimmed.toLowerCase() !== 'undefined' &&
+                       trimmed.toLowerCase() !== 'null';
+            }) // Remove empty lines and unwanted standalone words
+            .join('\n') // Join back
+            .trim();
+    }
+    return '';
+};
+
 const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
     const [localImageUrl, setLocalImageUrl] = useState(null);
     const [localVideoUrl, setLocalVideoUrl] = useState(null);
@@ -90,53 +115,58 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
 
     // Parse web resources from content
     const parseWebResources = (text) => {
+        const safeText = cleanContent(text);
         const webResourceRegex = /🌐 Web Resources:\s*(https?:\/\/[^\s,]+(?:,\s*https?:\/\/[^\s,]+)*)/;
-        const match = text.match(webResourceRegex);
+        const match = safeText.match(webResourceRegex);
         
         if (match) {
             const urls = match[1].split(',').map(url => url.trim());
             return {
                 hasWebResources: true,
                 urls: urls,
-                cleanContent: text.replace(webResourceRegex, '').trim()
+                cleanContent: cleanContent(safeText.replace(webResourceRegex, ''))
             };
         }
         
         return {
             hasWebResources: false,
             urls: [],
-            cleanContent: text
+            cleanContent: safeText
         };
     };
 
     // Parse invoice analysis from content
     const parseInvoiceAnalysis = (text) => {
+        const safeText = cleanContent(text);
         const invoicePattern = /Document Type:\s*Invoice/i;
         
-        if (!invoicePattern.test(text)) {
-            return { hasInvoiceAnalysis: false, cleanContent: text };
+        if (!invoicePattern.test(safeText)) {
+            return { 
+                hasInvoiceAnalysis: false, 
+                cleanContent: safeText
+            };
         }
 
         // Extract fields
         const extractField = (pattern, text) => {
-            const match = text.match(pattern);
+            const match = safeText.match(pattern);
             return match ? match[1].trim() : 'Not detected';
         };
 
         const extractedFields = {
-            invoiceNumber: extractField(/Invoice Number:\s*([^\n]+)/i, text),
-            invoiceDate: extractField(/Invoice Date:\s*([^\n]+)/i, text),
-            vendorName: extractField(/Vendor Name:\s*([^\n]+)/i, text),
-            buyerName: extractField(/Buyer Name:\s*([^\n]+)/i, text),
-            items: extractField(/Items:\s*(\[.*?\])/s, text),
-            totalAmount: extractField(/Total Amount:\s*([^\n]+)/i, text),
-            taxes: extractField(/Taxes:\s*([^\n]+)/i, text),
-            paymentDueDate: extractField(/Payment Due Date:\s*([^\n]+)/i, text)
+            invoiceNumber: extractField(/Invoice Number:\s*([^\n]+)/i, safeText),
+            invoiceDate: extractField(/Invoice Date:\s*([^\n]+)/i, safeText),
+            vendorName: extractField(/Vendor Name:\s*([^\n]+)/i, safeText),
+            buyerName: extractField(/Buyer Name:\s*([^\n]+)/i, safeText),
+            items: extractField(/Items:\s*(\[.*?\])/s, safeText),
+            totalAmount: extractField(/Total Amount:\s*([^\n]+)/i, safeText),
+            taxes: extractField(/Taxes:\s*([^\n]+)/i, safeText),
+            paymentDueDate: extractField(/Payment Due Date:\s*([^\n]+)/i, safeText)
         };
 
         // Extract validation results with improved parsing
         const validationPattern = /Validation Results:(.*?)Score:\s*(\d+)\/(\d+)\s*\((\d+)%\)/s;
-        const validationMatch = text.match(validationPattern);
+        const validationMatch = safeText.match(validationPattern);
         
         let validationResults = [];
         let score = { current: 0, total: 6, percentage: 0 };
@@ -175,15 +205,56 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
             };
         }
 
-        // Clean content by removing the invoice analysis
-        const cleanContent = text.replace(/Document Type: Invoice.*?Score:\s*\d+\/\d+\s*\(\d+%\)/s, '').trim();
+        // Clean content by removing the invoice analysis and EVERYTHING after it
+        let cleanedText = safeText;
+        
+        // Find the end of the invoice analysis and remove everything after it
+        const endPatterns = [
+            /Score:\s*\d+\/\d+\s*\(\d+%\)/g,
+            /Overall Score.*?\d+%/g,
+            /\d+\/\d+\s*\(\d+%\)/g
+        ];
+        
+        let foundEnd = false;
+        for (const pattern of endPatterns) {
+            const matches = [...cleanedText.matchAll(pattern)];
+            if (matches.length > 0) {
+                const lastMatch = matches[matches.length - 1];
+                const endIndex = lastMatch.index + lastMatch[0].length;
+                cleanedText = cleanedText.substring(0, endIndex);
+                foundEnd = true;
+                break;
+            }
+        }
+        
+        // If we found the end of invoice analysis, remove everything from "Document Type: Invoice" onwards
+        if (foundEnd) {
+            cleanedText = cleanedText.replace(/Document Type:\s*Invoice.*$/gs, '');
+        } else {
+            // Fallback: remove everything after "Document Type: Invoice"
+            cleanedText = cleanedText.replace(/Document Type:\s*Invoice.*$/gs, '');
+        }
+        
+        // Final cleanup - remove any remaining unwanted content
+        cleanedText = cleanedText
+            .replace(/undefined/gi, '')
+            .replace(/null/gi, '')
+            .replace(/^\s*text\s*$/gim, '')
+            .split('\n')
+            .filter(line => {
+                const trimmed = line.trim();
+                return trimmed.length > 0 && 
+                       !['text', 'undefined', 'null', ''].includes(trimmed.toLowerCase());
+            })
+            .join('\n')
+            .trim();
 
         return {
             hasInvoiceAnalysis: true,
             extractedFields,
             validationResults,
             score,
-            cleanContent
+            cleanContent: cleanedText || '' // Ensure it's always a string
         };
     };
 
@@ -539,14 +610,55 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
 
     // Process content through both parsers in sequence
     const processedContent = (() => {
-        // First, remove reference numbers like [1, 2, 3] or [1] from the content
-        let cleanedContent = content.replace(/\s*\[\s*\d+(?:\s*,\s*\d+)*\s*\]/g, '');
+        // First, clean and ensure we have valid content
+        const safeContent = cleanContent(content);
+        
+        // Remove reference numbers like [1, 2, 3] or [1] from the content
+        let cleanedContent = safeContent.replace(/\s*\[\s*\d+(?:\s*,\s*\d+)*\s*\]/g, '');
         
         // First parse web resources
         const webResult = parseWebResources(cleanedContent);
         
         // Then parse invoice analysis from the cleaned content
         const invoiceResult = parseInvoiceAnalysis(webResult.cleanContent);
+        
+        // Ensure finalContent is never undefined or null and doesn't contain undefined text
+        let finalContent = cleanContent(invoiceResult.cleanContent || webResult.cleanContent || cleanedContent);
+        
+        // Additional cleaning to remove any remaining undefined/null references and unwanted text
+        finalContent = finalContent
+            .replace(/undefined/gi, '')
+            .replace(/null/gi, '')
+            .replace(/^\s*text\s*$/gim, '') // Remove standalone "text"
+            .replace(/\s{2,}/g, ' ') // Replace multiple spaces with single space
+            .split('\n') // Split into lines
+            .filter(line => {
+                const trimmed = line.trim();
+                return trimmed.length > 0 && 
+                       trimmed.toLowerCase() !== 'text' && 
+                       trimmed.toLowerCase() !== 'undefined' &&
+                       trimmed.toLowerCase() !== 'null';
+            }) // Remove unwanted lines
+            .join('\n') // Join back
+            .trim();
+        
+        // If finalContent is empty or just whitespace, set it to empty string
+        if (!finalContent || finalContent.match(/^\s*$/)) {
+            finalContent = '';
+        }
+        
+        // Debug logging to help identify the issue
+        if (process.env.NODE_ENV === 'development') {
+            if (finalContent.includes('undefined') || finalContent.toLowerCase().includes('text')) {
+                console.log('WARNING: finalContent contains unwanted text:', finalContent);
+                console.log('Original content:', content);
+                console.log('Invoice result cleanContent:', invoiceResult.cleanContent);
+                console.log('Web result cleanContent:', webResult.cleanContent);
+            }
+            if (invoiceResult.hasInvoiceAnalysis && finalContent.trim().length > 0) {
+                console.log('INFO: Content remaining after invoice analysis:', finalContent);
+            }
+        }
         
         return {
             webSources: {
@@ -559,7 +671,7 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
                 validationResults: invoiceResult.validationResults || [],
                 score: invoiceResult.score || { current: 0, total: 6, percentage: 0 }
             },
-            finalContent: invoiceResult.cleanContent
+            finalContent: finalContent
         };
     })();
 
@@ -590,46 +702,53 @@ const MessageRenderer = ({ content, imageData, videoData, websearchInfo }) => {
                 />
             )}
 
-            {/* Render markdown content (text description) */}
-            <div className="prose prose-invert max-w-none">
-                <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
-                    components={{
-                        code: CodeBlock,
-                        img: MarkdownImage,
-                        a: ({ node, ...props }) => {
-                            const videoUrlRegex = /(https?:\/\/\S+\.(mp4|webm|ogg|mov|avi|flv|wmv)(\?\S*)?)/i;
-                            if (videoUrlRegex.test(props.href)) {
-                                return <MarkdownVideo src={props.href} title={props.title} />;
-                            }
-                            return <a {...props} />;
-                        },
-                        p: ({ node, ...props }) => <p {...props}>{props.children}</p>,
-                        hr: ({ node, ...props }) => (
-                            <hr key={props.key} className="my-4 border-t border-neutral-600" />
-                        ),
-                        h1: ({ node, ...props }) => <h1 key={props.key} className="text-2xl font-bold my-4">{props.children}</h1>,
-                        h2: ({ node, ...props }) => <h2 key={props.key} className="text-xl font-bold my-3">{props.children}</h2>,
-                        h3: ({ node, ...props }) => <h3 key={props.key} className="text-lg font-bold my-2">{props.children}</h3>,
-                        ul: ({ node, ...props }) => <ul key={props.key} className="ml-4 my-2 list-disc">{props.children}</ul>,
-                        ol: ({ node, ...props }) => <ol key={props.key} className="ml-4 my-2 list-decimal">{props.children}</ol>,
-                        li: ({ node, ...props }) => <li key={props.key} className="my-1">{props.children}</li>,
-                        table: ({ node, ...props }) => (
-                            <div className="overflow-x-auto my-4">
-                                <table className="min-w-full border border-neutral-600 rounded-lg" {...props} />
-                            </div>
-                        ),
-                        thead: ({ node, ...props }) => <thead className="bg-neutral-800" {...props} />,
-                        th: ({ node, ...props }) => <th className="border border-neutral-600 px-4 py-2 text-left text-white font-semibold" {...props} />,
-                        tbody: ({ node, ...props }) => <tbody {...props} />,
-                        tr: ({ node, ...props }) => <tr className={node.position.start.line % 2 === 0 ? 'bg-neutral-900' : 'bg-neutral-800'} {...props} />,
-                        td: ({ node, ...props }) => <td className="border border-neutral-600 px-4 py-2 text-white" {...props} />,
-                    }}
-                >
-                    {processedContent.finalContent}
-                </ReactMarkdown>
-            </div>
+            {/* Render markdown content (text description) - only if there's meaningful content AND no invoice analysis */}
+            {processedContent.finalContent && 
+             processedContent.finalContent.trim() && 
+             !processedContent.invoice.hasInvoiceAnalysis && // Don't render any content if invoice analysis is present
+             processedContent.finalContent.trim().toLowerCase() !== 'text' &&
+             !processedContent.finalContent.toLowerCase().includes('undefined') && 
+             processedContent.finalContent.length > 3 && ( // Only render if content is more than 3 characters
+                <div className="prose prose-invert max-w-none">
+                    <ReactMarkdown
+                        remarkPlugins={[remarkGfm, remarkMath]}
+                        rehypePlugins={[rehypeKatex]}
+                        components={{
+                            code: CodeBlock,
+                            img: MarkdownImage,
+                            a: ({ node, ...props }) => {
+                                const videoUrlRegex = /(https?:\/\/\S+\.(mp4|webm|ogg|mov|avi|flv|wmv)(\?\S*)?)/i;
+                                if (videoUrlRegex.test(props.href)) {
+                                    return <MarkdownVideo src={props.href} title={props.title} />;
+                                }
+                                return <a {...props} />;
+                            },
+                            p: ({ node, ...props }) => <p {...props}>{props.children}</p>,
+                            hr: ({ node, ...props }) => (
+                                <hr key={props.key} className="my-4 border-t border-neutral-600" />
+                            ),
+                            h1: ({ node, ...props }) => <h1 key={props.key} className="text-2xl font-bold my-4">{props.children}</h1>,
+                            h2: ({ node, ...props }) => <h2 key={props.key} className="text-xl font-bold my-3">{props.children}</h2>,
+                            h3: ({ node, ...props }) => <h3 key={props.key} className="text-lg font-bold my-2">{props.children}</h3>,
+                            ul: ({ node, ...props }) => <ul key={props.key} className="ml-4 my-2 list-disc">{props.children}</ul>,
+                            ol: ({ node, ...props }) => <ol key={props.key} className="ml-4 my-2 list-decimal">{props.children}</ol>,
+                            li: ({ node, ...props }) => <li key={props.key} className="my-1">{props.children}</li>,
+                            table: ({ node, ...props }) => (
+                                <div className="overflow-x-auto my-4">
+                                    <table className="min-w-full border border-neutral-600 rounded-lg" {...props} />
+                                </div>
+                            ),
+                            thead: ({ node, ...props }) => <thead className="bg-neutral-800" {...props} />,
+                            th: ({ node, ...props }) => <th className="border border-neutral-600 px-4 py-2 text-left text-white font-semibold" {...props} />,
+                            tbody: ({ node, ...props }) => <tbody {...props} />,
+                            tr: ({ node, ...props }) => <tr className={node.position.start.line % 2 === 0 ? 'bg-neutral-900' : 'bg-neutral-800'} {...props} />,
+                            td: ({ node, ...props }) => <td className="border border-neutral-600 px-4 py-2 text-white" {...props} />,
+                        }}
+                    >
+                        {cleanContent(processedContent.finalContent)}
+                    </ReactMarkdown>
+                </div>
+            )}
 
             {/* Render web sources AFTER the response content */}
             {processedContent.webSources.hasWebResources && (

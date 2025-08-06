@@ -24,6 +24,7 @@ dataclasses-json==0.6.7
 defusedxml==0.7.1
 diffusers==0.34.0
 distro==1.9.0
+duckduckgo_search==8.1.1
 durationpy==0.10
 easyocr==1.7.1
 et_xmlfile==2.0.0
@@ -71,6 +72,7 @@ langchain-google-genai==2.1.8
 langchain-huggingface==0.3.0
 langchain-openai==0.3.28
 langchain-text-splitters==0.3.8
+langdetect==1.0.9
 langsmith==0.4.5
 lazy_loader==0.4
 Levenshtein==0.27.1
@@ -112,6 +114,7 @@ passlib==1.7.4
 pgvector==0.4.1
 pillow==11.3.0
 posthog==6.3.1
+primp==0.15.0
 propcache==0.3.2
 proto-plus==1.26.1
 protobuf==6.31.1

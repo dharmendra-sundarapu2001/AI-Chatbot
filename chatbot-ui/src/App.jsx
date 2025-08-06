@@ -180,6 +180,8 @@ function App() {
                         video_data_base64: msg.video_data_base64 || null,
                         video_mime_type: msg.video_mime_type || null,
                         filename: msg.filename || null,
+                        file_type: msg.file_type || null,  // Use direct file_type
+                        mime_type: msg.mime_type || null,   // Use direct mime_type
                         websearch_info: msg.websearch_info || null,
                     })));
                 })
@@ -452,6 +454,8 @@ function App() {
                 video_data_base64: data.video_data_base64 || null,
                 video_mime_type: data.video_mime_type || null,
                 filename: data.filename || null,
+                file_type: data.file_type || null,  // Add file_type from backend
+                mime_type: data.mime_type || null,   // Add mime_type from backend
                 websearch_info: data.websearch_info || null,
             }]);
 
@@ -692,9 +696,92 @@ function App() {
     };
 
     // Helper function to get file type and display info
-    const getFileDisplayInfo = (filename) => {
+    const getFileDisplayInfo = (filename, backendFileType = null) => {
         if (!filename) return null;
 
+        // First try to use the backend file type if available
+        if (backendFileType) {
+            switch (backendFileType.toLowerCase()) {
+                case 'pdf':
+                    return {
+                        type: 'PDF Document',
+                        color: '#EF4444',
+                        bgColor: '#FEF2F2',
+                        borderColor: '#FECACA',
+                        badgeColor: '#EF4444',
+                        label: 'PDF'
+                    };
+                case 'word':
+                    return {
+                        type: 'Word Document',
+                        color: '#2563EB',
+                        bgColor: '#EFF6FF',
+                        borderColor: '#DBEAFE',
+                        badgeColor: '#2563EB',
+                        label: 'DOC'
+                    };
+                case 'powerpoint':
+                    return {
+                        type: 'PowerPoint Presentation',
+                        color: '#EA580C',
+                        bgColor: '#FFF7ED',
+                        borderColor: '#FED7AA',
+                        badgeColor: '#EA580C',
+                        label: 'PPT'
+                    };
+                case 'excel':
+                    return {
+                        type: 'Excel Spreadsheet',
+                        color: '#16A34A',
+                        bgColor: '#F0FDF4',
+                        borderColor: '#BBF7D0',
+                        badgeColor: '#16A34A',
+                        label: 'XLS'
+                    };
+                case 'csv':
+                    return {
+                        type: 'CSV Data',
+                        color: '#CA8A04',
+                        bgColor: '#FEFCE8',
+                        borderColor: '#FEF3C7',
+                        badgeColor: '#CA8A04',
+                        label: 'CSV'
+                    };
+                case 'text':
+                    return {
+                        type: 'Text Document',
+                        color: '#6B7280',
+                        bgColor: '#F9FAFB',
+                        borderColor: '#E5E7EB',
+                        badgeColor: '#6B7280',
+                        label: 'TXT'
+                    };
+                case 'json':
+                    return {
+                        type: 'JSON Data',
+                        color: '#8B5CF6',
+                        bgColor: '#F5F3FF',
+                        borderColor: '#DDD6FE',
+                        badgeColor: '#8B5CF6',
+                        label: 'JSON'
+                    };
+                case 'document':
+                case 'opendocument':
+                    return {
+                        type: 'Document',
+                        color: '#059669',
+                        bgColor: '#ECFDF5',
+                        borderColor: '#A7F3D0',
+                        badgeColor: '#059669',
+                        label: 'DOC'
+                    };
+                default:
+                    // If backend file type doesn't match known types, fall through to filename extension
+                    break;
+            }
+        }
+
+        // Fallback to filename extension if backend file type is not available or unknown
         const ext = filename.toLowerCase().split('.').pop();
 
         switch (ext) {
@@ -1761,130 +1848,215 @@ function App() {
                                         </div>
                                     )}
                                     {chat.map((msg, idx) => (
-                                    <div
-                                        key={msg.id || idx}
-                                        className={`
-                                            flex w-full
-                                            ${msg.type === 'user' ? 'justify-end' : 'justify-start'}
-                                        `}
-                                        style={{
-                                            backgroundColor: 'transparent',
-                                        }}
-                                    >
                                         <div
+                                            key={msg.id || idx}
                                             className={`
-                                                rounded-xl px-6 py-4 shadow
-                                                ${msg.type === 'user'
-                                                    ? 'text-white rounded-br-md'
-                                                    : 'rounded-bl-md'}
-                                                max-w-full break-words w-auto
+                                                flex w-full
+                                                ${msg.type === 'user' ? 'justify-end' : 'justify-start'}
                                             `}
                                             style={{
-                                                maxWidth: '100%',
-                                                backgroundColor: msg.type === 'user' ? currentTheme.primary : modeColors.surface,
-                                                color: msg.type === 'user' ? '#ffffff' : modeColors.text,
-                                                border: msg.type === 'bot' ? `1px solid ${modeColors.border}` : 'none'
+                                                backgroundColor: 'transparent',
                                             }}
                                         >
-                                            {/* Document file preview in chat messages - only show for non-image, non-video files */}
-                                            {msg.filename && !msg.image_data_base64 && !msg.video_data_base64 && (() => {
-                                                const fileInfo = getFileDisplayInfo(msg.filename);
-                                                if (!fileInfo) return null;
+                                            <div
+                                                className={`
+                                                    rounded-xl px-6 py-4 shadow
+                                                    ${msg.type === 'user'
+                                                        ? 'text-white rounded-br-md'
+                                                        : 'rounded-bl-md'}
+                                                    max-w-full break-words w-auto
+                                                `}
+                                                style={{
+                                                    maxWidth: '100%',
+                                                    backgroundColor: msg.type === 'user' ? currentTheme.primary : modeColors.surface,
+                                                    color: msg.type === 'user' ? '#ffffff' : modeColors.text,
+                                                    border: msg.type === 'bot' ? `1px solid ${modeColors.border}` : 'none'
+                                                }}
+                                            >
+                                                {/* FIX: This is the conditional rendering block that was causing the issue.
+                                                    The condition `!msg.image_data_base64 && !msg.video_data_base64` was incorrectly
+                                                    evaluating to true for bot messages that were meant to be a text response to an image.
+                                                    The backend was sending a `filename` in the bot's response, triggering this block.
+                                                    The fix is to only render this card for the ORIGINAL uploaded file from the USER.
+                                                    We check for `msg.type === 'user'` to ensure this.
+                                                */}
+                                                {msg.filename && !msg.image_data_base64 && !msg.video_data_base64 && msg.type === 'user' && (() => {
+                                                    const fileInfo = getFileDisplayInfo(msg.filename, msg.file_type);
+                                                    if (!fileInfo) return null;
 
-                                                return (
-                                                    <div className="flex items-center gap-2 mb-4 mt-1 p-3 rounded-lg" style={{
-                                                        backgroundColor: `${fileInfo.color}1A`, // 10% opacity
-                                                        border: `1px solid ${fileInfo.color}33` // 20% opacity
-                                                    }}>
-                                                        <div className="relative rounded-md p-1 flex items-center justify-center" style={{
-                                                            width: '48px',
-                                                            height: '48px',
-                                                            backgroundColor: fileInfo.bgColor,
-                                                            border: `1px solid ${fileInfo.borderColor}`
+                                                    return (
+                                                        <div className="flex items-center gap-2 mb-4 mt-1 p-3 rounded-lg" style={{
+                                                            backgroundColor: `${fileInfo.color}1A`, // 10% opacity
+                                                            border: `1px solid ${fileInfo.color}33` // 20% opacity
                                                         }}>
-                                                            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" style={{ color: fileInfo.color }}>
-                                                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" opacity="0.8" />
-                                                                <polyline points="14,2 14,8 20,8" fill="none" stroke="white" strokeWidth="1.5" />
-                                                                <text x="12" y="16" textAnchor="middle" fontSize="6" fill="white" fontWeight="bold">PDF</text>
-                                                            </svg>
-                                                            <div className="absolute -top-1 -right-1 text-white text-xs rounded-full px-1 py-0.5 leading-none font-bold" style={{
-                                                                fontSize: '8px',
-                                                                backgroundColor: fileInfo.badgeColor
+                                                            <div className="relative rounded-md p-1 flex items-center justify-center" style={{
+                                                                width: '48px',
+                                                                height: '48px',
+                                                                backgroundColor: fileInfo.bgColor,
+                                                                border: `1px solid ${fileInfo.borderColor}`
                                                             }}>
-                                                                {fileInfo.label}
+                                                                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" style={{ color: fileInfo.color }}>
+                                                                    {(() => {
+                                                                        switch (fileInfo.label) {
+                                                                            case 'PDF':
+                                                                                return (
+                                                                                    <>
+                                                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" opacity="0.8" />
+                                                                                        <polyline points="14,2 14,8 20,8" fill="none" stroke="white" strokeWidth="1.5" />
+                                                                                        <text x="12" y="16" textAnchor="middle" fontSize="6" fill="white" fontWeight="bold">PDF</text>
+                                                                                    </>
+                                                                                );
+                                                                            case 'DOC':
+                                                                                return (
+                                                                                    <>
+                                                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" opacity="0.8" />
+                                                                                        <polyline points="14,2 14,8 20,8" fill="none" stroke="white" strokeWidth="1.5" />
+                                                                                        <text x="12" y="16" textAnchor="middle" fontSize="5.5" fill="white" fontWeight="bold">DOC</text>
+                                                                                    </>
+                                                                                );
+                                                                            case 'XLS':
+                                                                                return (
+                                                                                    <>
+                                                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" opacity="0.8" />
+                                                                                        <polyline points="14,2 14,8 20,8" fill="none" stroke="white" strokeWidth="1.5" />
+                                                                                        <rect x="7" y="10" width="10" height="1" fill="white" opacity="0.7" />
+                                                                                        <rect x="7" y="12" width="10" height="1" fill="white" opacity="0.7" />
+                                                                                        <rect x="7" y="14" width="10" height="1" fill="white" opacity="0.7" />
+                                                                                        <text x="12" y="18.5" textAnchor="middle" fontSize="5.5" fill="white" fontWeight="bold">XLS</text>
+                                                                                    </>
+                                                                                );
+                                                                            case 'PPT':
+                                                                                return (
+                                                                                    <>
+                                                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" opacity="0.8" />
+                                                                                        <polyline points="14,2 14,8 20,8" fill="none" stroke="white" strokeWidth="1.5" />
+                                                                                        <rect x="8" y="11" width="8" height="5" rx="1" fill="white" opacity="0.6" />
+                                                                                        <text x="12" y="18.5" textAnchor="middle" fontSize="5.5" fill="white" fontWeight="bold">PPT</text>
+                                                                                    </>
+                                                                                );
+                                                                            case 'CSV':
+                                                                                return (
+                                                                                    <>
+                                                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" opacity="0.8" />
+                                                                                        <polyline points="14,2 14,8 20,8" fill="none" stroke="white" strokeWidth="1.5" />
+                                                                                        <line x1="7" y1="11" x2="17" y2="11" stroke="white" strokeWidth="0.5" />
+                                                                                        <line x1="7" y1="13" x2="17" y2="13" stroke="white" strokeWidth="0.5" />
+                                                                                        <line x1="7" y1="15" x2="17" y2="15" stroke="white" strokeWidth="0.5" />
+                                                                                        <line x1="10" y1="10" x2="10" y2="16" stroke="white" strokeWidth="0.5" />
+                                                                                        <line x1="14" y1="10" x2="14" y2="16" stroke="white" strokeWidth="0.5" />
+                                                                                        <text x="12" y="18.5" textAnchor="middle" fontSize="5.5" fill="white" fontWeight="bold">CSV</text>
+                                                                                    </>
+                                                                                );
+                                                                            case 'TXT':
+                                                                                return (
+                                                                                    <>
+                                                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" opacity="0.8" />
+                                                                                        <polyline points="14,2 14,8 20,8" fill="none" stroke="white" strokeWidth="1.5" />
+                                                                                        <line x1="8" y1="12" x2="16" y2="12" stroke="white" strokeWidth="1" />
+                                                                                        <line x1="8" y1="14" x2="16" y2="14" stroke="white" strokeWidth="1" />
+                                                                                        <line x1="8" y1="16" x2="13" y2="16" stroke="white" strokeWidth="1" />
+                                                                                        <text x="12" y="19" textAnchor="middle" fontSize="5.5" fill="white" fontWeight="bold">TXT</text>
+                                                                                    </>
+                                                                                );
+                                                                            case 'JSON':
+                                                                                return (
+                                                                                    <>
+                                                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" opacity="0.8" />
+                                                                                        <polyline points="14,2 14,8 20,8" fill="none" stroke="white" strokeWidth="1.5" />
+                                                                                        <path d="M9 11c1 0 1.5 0.5 1.5 1.5v1c0 1-0.5 1.5-1.5 1.5 1 0 1.5 0.5 1.5 1.5v1c0 1-0.5 1.5-1.5 1.5" stroke="white" strokeWidth="1" fill="none" />
+                                                                                        <path d="M15 11c-1 0-1.5 0.5-1.5 1.5v1c0 1 0.5 1.5 1.5 1.5-1 0-1.5 0.5-1.5 1.5v1c0 1 0.5 1.5 1.5 1.5" stroke="white" strokeWidth="1" fill="none" />
+                                                                                        <text x="12" y="19" textAnchor="middle" fontSize="5" fill="white" fontWeight="bold">JSON</text>
+                                                                                    </>
+                                                                                );
+                                                                            default:
+                                                                                return (
+                                                                                    <>
+                                                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" opacity="0.8" />
+                                                                                        <polyline points="14,2 14,8 20,8" fill="none" stroke="white" strokeWidth="1.5" />
+                                                                                        <text x="12" y="16" textAnchor="middle" fontSize="6" fill="white" fontWeight="bold">{fileInfo.label}</text>
+                                                                                    </>
+                                                                                );
+                                                                        }
+                                                                    })()}
+                                                                </svg>
+                                                                <div className="absolute -top-1 -right-1 text-white text-xs rounded-full px-1 py-0.5 leading-none font-bold" style={{
+                                                                    fontSize: '8px',
+                                                                    backgroundColor: fileInfo.badgeColor
+                                                                }}>
+                                                                    {fileInfo.label}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-col flex-1">
+                                                                <span className="text-sm font-medium truncate max-w-[200px]" style={{ color: modeColors.text }}>
+                                                                    {msg.filename}
+                                                                </span>
+                                                                <span className="text-xs opacity-70" style={{ color: modeColors.textSecondary }}>
+                                                                    {fileInfo.type}
+                                                                </span>
                                                             </div>
                                                         </div>
-                                                        <div className="flex flex-col flex-1">
-                                                            <span className="text-sm font-medium truncate max-w-[200px]" style={{ color: modeColors.text }}>
-                                                                {msg.filename}
-                                                            </span>
-                                                            <span className="text-xs opacity-70" style={{ color: modeColors.textSecondary }}>
-                                                                {fileInfo.type}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })()}
+                                                    );
+                                                })()}
 
-                                            {/* Regular message content with image handling */}
-                                            <MessageRenderer
-                                                content={msg.text}
-                                                imageData={msg.image_mime_type && msg.image_mime_type.startsWith('image/') ? msg.image_data_base64 : null}
-                                                videoData={msg.video_data_base64}
-                                                imageType={msg.image_mime_type}
-                                                videoType={msg.video_mime_type}
-                                                websearchInfo={msg.websearch_info}
-                                                fileInfo={msg.file_info}
-                                                filename={msg.filename}
-                                                onDownload={handleFileDownload}
-                                                theme={currentTheme}
-                                                modeColors={modeColors}
-                                            />
+                                                {/* Regular message content with image handling */}
+                                                <MessageRenderer
+                                                    content={msg.text}
+                                                    imageData={msg.image_mime_type && msg.image_mime_type.startsWith('image/') ? msg.image_data_base64 : null}
+                                                    videoData={msg.video_data_base64}
+                                                    imageType={msg.image_mime_type}
+                                                    videoType={msg.video_mime_type}
+                                                    websearchInfo={msg.websearch_info}
+                                                    fileInfo={msg.file_info}
+                                                    filename={msg.filename}
+                                                    onDownload={handleFileDownload}
+                                                    theme={currentTheme}
+                                                    modeColors={modeColors}
+                                                />
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
-                                {/* Display typing indicator only if the bot is typing */}
-                                {isBotTyping && (
-                                    <div className="flex w-full justify-start">
-                                        <div
-                                            className="rounded-xl px-6 py-4 shadow rounded-bl-md max-w-full break-words whitespace-pre-wrap w-full flex items-center gap-2"
-                                            style={{
-                                                backgroundColor: modeColors.surface,
-                                                color: modeColors.text,
-                                                border: `1px solid ${modeColors.border}`
-                                            }}
-                                        >
-                                            <span className="animate-bounce">Typing</span>
-                                            <span className="animate-bounce delay-100">.</span>
-                                            <span className="animate-bounce delay-200">.</span>
-                                            <span className="animate-bounce delay-300">.</span>
+                                    ))}
+                                    {/* Display typing indicator only if the bot is typing */}
+                                    {isBotTyping && (
+                                        <div className="flex w-full justify-start">
+                                            <div
+                                                className="rounded-xl px-6 py-4 shadow rounded-bl-md max-w-full break-words whitespace-pre-wrap w-full flex items-center gap-2"
+                                                style={{
+                                                    backgroundColor: modeColors.surface,
+                                                    color: modeColors.text,
+                                                    border: `1px solid ${modeColors.border}`
+                                                }}
+                                            >
+                                                <span className="animate-bounce">Typing</span>
+                                                <span className="animate-bounce delay-100">.</span>
+                                                <span className="animate-bounce delay-200">.</span>
+                                                <span className="animate-bounce delay-300">.</span>
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
-                                {/* Display web search indicator only if web search is active */}
-                                {isWebSearching && (
-                                    <div className="flex w-full justify-start">
-                                        <div
-                                            className="rounded-xl px-6 py-4 shadow rounded-bl-md max-w-full break-words whitespace-pre-wrap w-full flex items-center gap-2"
-                                            style={{
-                                                backgroundColor: modeColors.surface,
-                                                color: modeColors.text,
-                                                border: `1px solid ${modeColors.border}`
-                                            }}
-                                        >
-                                            <span className="animate-bounce">🔍 Searching the web</span>
-                                            <span className="animate-bounce delay-100">.</span>
-                                            <span className="animate-bounce delay-200">.</span>
-                                            <span className="animate-bounce delay-300">.</span>
+                                    )}
+                                    {/* Display web search indicator only if web search is active */}
+                                    {isWebSearching && (
+                                        <div className="flex w-full justify-start">
+                                            <div
+                                                className="rounded-xl px-6 py-4 shadow rounded-bl-md max-w-full break-words whitespace-pre-wrap w-full flex items-center gap-2"
+                                                style={{
+                                                    backgroundColor: modeColors.surface,
+                                                    color: modeColors.text,
+                                                    border: `1px solid ${modeColors.border}`
+                                                }}
+                                            >
+                                                <span className="animate-bounce">🔍 Searching the web</span>
+                                                <span className="animate-bounce delay-100">.</span>
+                                                <span className="animate-bounce delay-200">.</span>
+                                                <span className="animate-bounce delay-300">.</span>
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
-                            </>
-                        )}
-                        <div ref={chatEndRef} />
-                    </div>
-                </main>
-                ) : (
+                                    )}
+                                </>
+                            )}
+                            <div ref={chatEndRef} />
+                        </div>
+                    </main>
+                    ) : (
                     // Tic-Tac-Toe Game View
                     <main 
                         className="flex-1 flex flex-col w-full min-h-0 overflow-y-auto relative"
@@ -2011,7 +2183,7 @@ function App() {
                                                 border: `1px solid #FED7AA` // fileInfo.borderColor
                                             }}>
                                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" className="text-orange-600">
-                                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0  0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" fill="#EA580C" />
+                                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z" fill="#EA580C" />
                                                     <polyline points="14,2 14,8 20,8" fill="none" stroke="white" strokeWidth="1.5" />
                                                     <text x="12" y="16" textAnchor="middle" fontSize="5" fill="white" fontWeight="bold">PPT</text>
                                                 </svg>
@@ -2201,13 +2373,36 @@ function App() {
                                 onChange={(e) => {
                                     setQuestion(e.target.value);
                                     e.target.style.height = 'auto';
-                                    e.target.style.height = (e.target.scrollHeight) + 'px';
+                                    e.target.style.height = `${e.target.scrollHeight}px`;
                                 }}
-                                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && !isBotTyping && !isWebSearching && !isLoadingChat && handleSend()} // Disable if any loading state is active
+                                onKeyDown={(e) => {
+                               if (e.key === 'Enter' && !e.shiftKey && !isBotTyping && !isWebSearching && !isLoadingChat) {
+                               e.preventDefault();
+                               handleSend();
+                               }
+                            }}
+                            onPaste={(e) => {
+                                e.preventDefault(); // Prevent default paste behavior
+                                const pasteText = e.clipboardData.getData('text/plain');
+                                const currentValue = inputRef.current.value;
+                                const start = inputRef.current.selectionStart;
+                                const end = inputRef.current.selectionEnd;
+                                const newValue = currentValue.substring(0, start) + pasteText + currentValue.substring(end);
+                                setQuestion(newValue);
+                                const newCursorPosition = start + pasteText.length;
+                                setTimeout(() => {
+                              if (inputRef.current) {
+                              inputRef.current.selectionStart = newCursorPosition;
+                              inputRef.current.selectionEnd = newCursorPosition;
+                              inputRef.current.style.height = 'auto';
+                              inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
+                              inputRef.current.scrollTop = inputRef.current.scrollHeight;
+                            }
+                        }, 0);
+                     }}
                                 disabled={isBotTyping || isWebSearching || isLoadingChat} // Disable if any loading state is active
                                 rows={1}
-                            />
-
+                    />
                             {/* File upload button */}
                             <input
                                 type="file"

@@ -67,11 +67,20 @@ class ChatService:
 3.  **Structured Data**: Create tables for data presentation, comparisons, lists, etc.
 4.  **Mathematical Content**: Render mathematical formulas and equations using LaTeX notation
 5.  **Visual Content**: Generate images when requested using available tools
-6.  **Organized Information**: Structure responses with headings, lists, and logical flow
+6.  **Document Analysis**: Analyze and provide insights from uploaded documents (PDFs, Excel, Word, etc.)
+7.  **Organized Information**: Structure responses with headings, lists, and logical flow
 
 CRITICAL: When asked to create images or videos, you MUST use the proper tool calls and NOT print function calls as text. 
 DO NOT output text like "generate_image_tool(prompt='...')" or "default_api.generate_image_tool(...)". 
 Instead, you MUST use the proper tool calling mechanism.
+
+**Document Analysis Guidelines:**
+- When provided with document content, analyze it comprehensively and provide detailed insights
+- For Excel files, identify and explain data patterns, key metrics, and important information
+- For PDFs and Word documents, summarize key points and extract relevant information
+- Always reference the specific document when providing information from uploaded files
+- Present data in well-formatted tables when appropriate
+- Questions about file content (using phrases like "according to the file", "from the document", "based on the data", "which country/person/item", etc.) are ANALYSIS requests, NOT image generation requests
 
 **Formatting Guidelines:**
 - Use tables for any structured data (periodic tables, comparisons, schedules, etc.)
@@ -81,8 +90,10 @@ Instead, you MUST use the proper tool calling mechanism.
 - Use lists for step-by-step instructions or itemized information
 
 **Image Generation:**
-- When the user's request **clearly and unequivocally** asks for a visual image, diagram, picture, or anything that can be visually generated, **YOU MUST, WITHOUT ANY TEXTUAL RESPONSE OR CLARIFYING QUESTIONS, IMMEDIATELY INVOKE THE `generate_image_tool`**.
-- This includes prompts like "show me", "draw", "create a picture", "visualize", "generate an image of X", "I want an image of Y", or even simple requests like "beach view image".
+- When the user's request **explicitly and specifically** asks for a visual image, diagram, picture, drawing, or illustration to be created or generated, **YOU MUST, WITHOUT ANY TEXTUAL RESPONSE OR CLARIFYING QUESTIONS, IMMEDIATELY INVOKE THE `generate_image_tool`**.
+- This includes ONLY direct image generation requests like "draw me a...", "create a picture of...", "generate an image of...", "make an illustration of...", "I want you to draw...", "please create a visual of...", or "design an image of...".
+- **DO NOT** generate images for questions about document content, data analysis, file information, or general inquiries that happen to use words like "show me", "visualize", or "which". These are informational requests, not image creation requests.
+- **ESPECIALLY DO NOT** generate images for questions that use phrases like "according to the file", "based on the document", "from the data", "which country", "what is", "who is", etc. These are data inquiry questions, NOT image creation requests.
 - **CRITICAL INSTRUCTION FOR TOOL ARGUMENT (`prompt`):** When calling the `generate_image_tool`, the `prompt` argument **must be a highly detailed, descriptive, and creative textual representation of the desired image.**
     - **You MUST automatically infer and elaborate on any missing details from the user's request, creating a rich and imaginative scene. Focus heavily on positive descriptions for lighting and color.** For example, if the user says "beach view image", you should automatically generate a detailed prompt like: "An **ultra-photorealistic** image capturing a **breathtaking tropical beach at golden hour sunset**. The scene is bathed in **warm, glowing light**, casting **long, soft shadows**. The foreground features **crystal-clear, emerald-green ocean waves** gently lapping over **sparkling white sand** adorned with **iridescent seashells**. In the midground, a **richly textured, sun-kissed driftwood log** gleams beside the water's edge. The background showcases **lush, vibrant palm trees**, sharply silhouetted against a sky exploding with **fiery oranges, deep magentas, electric purples, and soft pastel pinks**. The vast ocean reflects the **brilliant, multi-hued sky**, creating a mesmerizing, **serene, and overwhelmingly colorful panorama**. Shot with a **wide-angle lens**, **high dynamic range (HDR)**."
     - **DO NOT provide any descriptive text *before* invoking the tool.** Your response should be solely the tool call, allowing the tool to execute.
@@ -110,6 +121,66 @@ Adapt your response format to best serve the user's specific request while maint
         
         # Initialize LLMs with tools
         self._initialize_llms()
+    
+    def _map_file_type_for_ui(self, raw_file_type: str, filename: str, mime_type: str) -> str:
+        """Map RAG service file types to UI-friendly file type identifiers"""
+        # First check the raw file type from RAG
+        if raw_file_type in ['xlsx', 'xls']:
+            return "excel"
+        elif raw_file_type == 'pdf':
+            return "pdf"
+        elif raw_file_type in ['docx', 'doc']:
+            return "word"
+        elif raw_file_type in ['pptx', 'ppt']:
+            return "powerpoint"
+        elif raw_file_type == 'csv':
+            return "csv"
+        elif raw_file_type in ['txt', 'md']:
+            return "text"
+        elif raw_file_type == 'json':
+            return "json"
+        elif raw_file_type in ['odt', 'ods', 'odp']:
+            return "opendocument"
+        
+        # If raw_file_type doesn't match, try filename
+        if filename:
+            file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
+            if file_ext in ['xlsx', 'xls']:
+                return "excel"
+            elif file_ext == 'pdf':
+                return "pdf"
+            elif file_ext in ['docx', 'doc']:
+                return "word"
+            elif file_ext in ['pptx', 'ppt']:
+                return "powerpoint"
+            elif file_ext == 'csv':
+                return "csv"
+            elif file_ext in ['txt', 'md']:
+                return "text"
+            elif file_ext == 'json':
+                return "json"
+            elif file_ext in ['odt', 'ods', 'odp']:
+                return "opendocument"
+        
+        # If still no match, try MIME type
+        if mime_type:
+            if 'spreadsheet' in mime_type or 'excel' in mime_type:
+                return "excel"
+            elif 'pdf' in mime_type:
+                return "pdf"
+            elif 'word' in mime_type or 'document' in mime_type:
+                return "word"
+            elif 'presentation' in mime_type:
+                return "powerpoint"
+            elif 'csv' in mime_type:
+                return "csv"
+            elif 'json' in mime_type:
+                return "json"
+            elif 'text' in mime_type:
+                return "text"
+        
+        # Default fallback
+        return "document"
     
     def _initialize_llms(self):
         """Initialize language models with tools"""
@@ -354,8 +425,10 @@ Adapt your response format to best serve the user's specific request while maint
             result = self.rag_service.add_file_to_vectorstore(file_bytes, filename, mime_type, user_email, thread_id, user_id, db)
             
             if result["status"] == "success":
-                file_type = result.get("file_type", "file")
-                logger.info(f"✅ {file_type.upper()} processed with RAG - {user_email} | Thread: {thread_id} | Filename: {filename} | Chunks: {result['chunks_count']}")
+                raw_file_type = result.get("file_type", "file")
+                # Map RAG file types to UI-friendly types
+                file_type = self._map_file_type_for_ui(raw_file_type, filename, mime_type)
+                logger.info(f"✅ {raw_file_type.upper()} processed with RAG - {user_email} | Thread: {thread_id} | Filename: {filename} | Chunks: {result['chunks_count']}")
                 return {
                     "rag_result": result,
                     "filename": filename,
@@ -364,8 +437,10 @@ Adapt your response format to best serve the user's specific request while maint
                     "processed_with_rag": True
                 }
             elif result["status"] == "exists":
-                file_type = result.get("file_type", "file")
-                logger.info(f"📋 {file_type.upper()} already in RAG store - {user_email} | Thread: {thread_id} | Filename: {filename}")
+                raw_file_type = result.get("file_type", "file")
+                # Map RAG file types to UI-friendly types
+                file_type = self._map_file_type_for_ui(raw_file_type, filename, mime_type)
+                logger.info(f"📋 {raw_file_type.upper()} already in RAG store - {user_email} | Thread: {thread_id} | Filename: {filename}")
                 return {
                     "rag_result": result,
                     "filename": filename,
@@ -503,12 +578,15 @@ EXTRACTED TEXT CONTENT:
             "application/csv",
             "text/plain",  # txt
             "application/json",
-            "text/markdown"  # md
+            "text/markdown",  # md
+            "application/vnd.oasis.opendocument.text",  # odt
+            "application/vnd.oasis.opendocument.spreadsheet",  # ods
+            "application/vnd.oasis.opendocument.presentation"  # odp
         ]
         
         # Check file extension for document types
         file_ext = file.filename.lower().split('.')[-1] if '.' in file.filename else ''
-        document_extensions = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv', 'txt', 'json', 'md']
+        document_extensions = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv', 'txt', 'json', 'md', 'odt', 'ods', 'odp']
         
         # Process documents with RAG
         if file_mimetype in document_types or file_ext in document_extensions:
@@ -539,20 +617,47 @@ EXTRACTED TEXT CONTENT:
             filename = file_data.get("filename")
             file_type = file_data.get("file_type")  # Get file type from file_data
             
+            # If file_type is not present in file_data, determine it from filename or mime_type
+            if not file_type and filename:
+                file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
+                if file_ext in ['pdf']:
+                    file_type = "pdf"
+                elif file_ext in ['xlsx', 'xls']:
+                    file_type = "excel"
+                elif file_ext in ['docx', 'doc']:
+                    file_type = "word"
+                elif file_ext in ['pptx', 'ppt']:
+                    file_type = "powerpoint"
+                elif file_ext in ['csv']:
+                    file_type = "csv"
+                elif file_ext in ['txt', 'md']:
+                    file_type = "text"
+                elif file_ext in ['json']:
+                    file_type = "json"
+                elif file_ext in ['odt', 'ods', 'odp']:
+                    file_type = "opendocument"
+                elif file_data.get("file_mimetype", "").startswith("image/"):
+                    file_type = "image"
+                elif file_data.get("file_mimetype", "").startswith("video/"):
+                    file_type = "video"
+                else:
+                    file_type = "document"  # fallback
+            
             if file_data.get("processed_with_rag") and not (file_data.get("is_invoice") and file_data.get("file_mimetype", "").startswith("image/")):
                 # For files processed with RAG (PDF, Word, Excel, etc.), don't store media data
                 # But for invoice images, we still want to show the image in UI
+                # Keep the determined file_type for RAG-processed documents
                 pass
             elif file_data.get("file_mimetype", "").startswith("image/"):
                 # For images (including invoices) - store both the base64 data AND the MIME type
                 image_data = file_data["file_content_base64"]
                 image_mime_type = file_data["file_mimetype"]
-                file_type = "image"
+                file_type = "image"  # Override for images
             elif file_data.get("file_mimetype", "").startswith("video/"):
                 # For videos - store video data
                 video_data = file_data.get("file_content_base64")
                 video_mime_type = file_data["file_mimetype"]
-                file_type = "video"
+                file_type = "video"  # Override for videos
         
         user_chat = Chat(
             sender="user",
@@ -570,7 +675,7 @@ EXTRACTED TEXT CONTENT:
         db.commit()
         db.refresh(user_chat)
         
-        logger.info(f"💾 USER MESSAGE SAVED - {user_email} | Thread ID: {thread_id} | Message: '{message[:100]}...' | Filename: {filename}")
+        logger.info(f"💾 USER MESSAGE SAVED - {user_email} | Thread ID: {thread_id} | Message: '{message[:100]}...' | Filename: {filename} | File Type: {file_type}")
         return user_chat
     
     def save_bot_message(self, message: str, thread_id: int, image_data: Optional[str], 
@@ -725,13 +830,31 @@ EXTRACTED TEXT CONTENT:
             # Crucially, return here. This stops further processing of general RAG or other file types
             # for this specific message turn, ensuring the LLM only focuses on the invoice task.
             return langchain_messages 
+
+        # Handle regular images (not invoices) - MUST come before general question handling
+        elif file_data and file_data.get("file_mimetype", "").startswith("image/") and not file_data.get("is_invoice"):
+            # For regular images, include the image data directly without searching RAG
+            if not current_question or not current_question.strip():
+                question_to_llm = "Please analyze this image."
+            else:
+                question_to_llm = current_question
+                
+            logger.info(f"🖼️ Processing regular image with LLM - {user_email} | Filename: {file_data.get('filename')}")
+            
+            langchain_messages.append(HumanMessage(content=[
+                {"type": "text", "text": question_to_llm},
+                {"type": "image_url", "image_url": {"url": f"data:{file_data['file_mimetype']};base64,{file_data['file_content_base64']}"}}
+            ]))
+            
+            # Return here to prevent RAG search for image analysis
+            return langchain_messages
         # --- IMPORTANT MODIFICATION ENDS HERE ---
 
-        # Handle new PDF upload case - prioritize the currently uploaded file
-        # Check for 'file_type' as 'is_pdf' might be an internal flag and 'file_mimetype' is more reliable
-        elif file_data and file_data.get("file_mimetype") == "application/pdf" and file_data.get("processed_with_rag"):
+        # Handle new document upload case (PDF, Excel, Word, etc.) - prioritize the currently uploaded file
+        elif file_data and file_data.get("processed_with_rag"):
             if current_question:
                 filename = file_data.get("filename")
+                file_type = file_data.get("file_mimetype", "").split("/")[-1].upper()  # Get file type for logging
                 logger.info(f"🎯 RAG: Searching in newly uploaded file '{filename}' - {user_email}")
                 
                 file_specific_chunks = self.rag_service.search_in_specific_file(
@@ -747,7 +870,7 @@ EXTRACTED TEXT CONTENT:
                         f"From the uploaded file '{chunk['filename']}' (similarity: {chunk['similarity_score']:.2f}):\n{chunk['content']}"
                         for chunk in file_specific_chunks
                     ])
-                    question_to_llm = f"{current_question}\n\nContent from the uploaded PDF file:\n{rag_context}"
+                    question_to_llm = f"{current_question}\n\nContent from the uploaded file:\n{rag_context}"
                     logger.info(f"🎯 RAG: Found {len(file_specific_chunks)} chunks in uploaded file '{filename}' - {user_email}")
                 else:
                     relevant_chunks = self.rag_service.search_relevant_content(
@@ -765,20 +888,39 @@ EXTRACTED TEXT CONTENT:
                         question_to_llm = f"{current_question}\n\nRelevant context from your documents (note: no relevant content found in the uploaded file '{filename}'):\n{rag_context}"
                         logger.info(f"🔍 RAG: Fallback search found {len(relevant_chunks)} chunks from other files - {user_email}")
                     else:
-                        question_to_llm = f"{current_question}\n\n(Note: PDF '{filename}' was uploaded but no relevant content found for this query.)"
+                        question_to_llm = f"{current_question}\n\n(Note: File '{filename}' was uploaded but no relevant content found for this query.)"
                         logger.info(f"🔍 RAG: No relevant content found for uploaded file '{filename}' - {user_email}")
             else:
-                question_to_llm = f"PDF '{file_data['filename']}' has been successfully processed and stored in the knowledge base."
+                question_to_llm = f"File '{file_data['filename']}' has been successfully processed and stored in the knowledge base."
             
             langchain_messages.append(HumanMessage(content=question_to_llm))
             
         elif current_question:
             # For regular questions (no new file upload), search across all user's documents
+            # Detect if this is a numerical/ranking query and increase search scope
+            is_numerical_query = any(keyword in current_question.lower() for keyword in [
+                'rank', 'position', 'number', 'score', 'rating', 'place', 'order',
+                '1st', '2nd', '3rd', 'th rank', 'st rank', 'nd rank', 'rd rank'
+            ]) or any(char.isdigit() for char in current_question)
+            
+            search_top_k = 8 if is_numerical_query else 3  # Increase scope for numerical queries
+            
+            # Enhance query for better numerical searches
+            enhanced_query = current_question
+            if is_numerical_query:
+                # Extract numbers and ranking terms to create multiple search variations
+                import re
+                numbers = re.findall(r'\d+', current_question)
+                if numbers:
+                    # Create enhanced query with variations
+                    enhanced_query = f"{current_question} rank ranking position number {' '.join(numbers)}"
+                    logger.info(f"🔢 NUMERICAL QUERY DETECTED - Enhanced search query - {user_email}")
+            
             relevant_chunks = self.rag_service.search_relevant_content(
-                query=current_question, 
+                query=enhanced_query, 
                 user_email=user_email,
                 thread_id=thread_id,
-                top_k=3  # Get top 3 most relevant chunks
+                top_k=search_top_k
             )
             
             if relevant_chunks:
@@ -789,27 +931,41 @@ EXTRACTED TEXT CONTENT:
                 question_to_llm = f"{current_question}\n\nRelevant context from your uploaded documents:\n{rag_context}"
                 logger.info(f"🔍 RAG: Found {len(relevant_chunks)} relevant chunks for query - {user_email}")
             else:
-                # No relevant content found in user's documents
-                logger.info(f"🔍 RAG: No relevant chunks found for query - {user_email}")
+                # No relevant content found - try a broader search for numerical queries
+                if is_numerical_query:
+                    logger.info(f"🔍 RAG: No chunks found, trying broader search for numerical query - {user_email}")
+                    # Try searching with just the numbers and common ranking terms
+                    numbers = re.findall(r'\d+', current_question)
+                    if numbers:
+                        fallback_query = f"rank ranking position {' '.join(numbers)} country countries"
+                        relevant_chunks = self.rag_service.search_relevant_content(
+                            query=fallback_query,
+                            user_email=user_email,
+                            thread_id=thread_id,
+                            top_k=10  # Cast wider net
+                        )
+                        if relevant_chunks:
+                            rag_context = "\n\n".join([
+                                f"From '{chunk['filename']}' (similarity: {chunk['similarity_score']:.2f}):\n{chunk['content']}"
+                                for chunk in relevant_chunks
+                            ])
+                            question_to_llm = f"{current_question}\n\nBroader context from your uploaded documents:\n{rag_context}"
+                            logger.info(f"🔍 RAG: Fallback search found {len(relevant_chunks)} chunks - {user_email}")
+                        else:
+                            logger.info(f"🔍 RAG: No relevant chunks found even with fallback search - {user_email}")
+                else:
+                    logger.info(f"🔍 RAG: No relevant chunks found for query - {user_email}")
             
             langchain_messages.append(HumanMessage(content=question_to_llm))
         
         # Handle error cases and other file types (ensure correct mimetype checks)
-        elif file_data and file_data.get("file_mimetype") == "application/pdf" and not file_data.get("processed_with_rag"):
-            # PDF processing failed
-            error_msg = file_data.get("error", "Unknown error occurred while processing PDF")
-            question_to_llm = f"{current_question}\n\n(Error: {error_msg})" if current_question else f"Error processing PDF: {error_msg}"
+        elif file_data and not file_data.get("processed_with_rag") and file_data.get("error"):
+            # File processing failed
+            error_msg = file_data.get("error", "Unknown error occurred while processing file")
+            question_to_llm = f"{current_question}\n\n(Error: {error_msg})" if current_question else f"Error processing file: {error_msg}"
             langchain_messages.append(HumanMessage(content=question_to_llm))
             
-        elif file_data and file_data.get("file_mimetype", "").startswith("image/") and not file_data.get("is_invoice"):
-            # For regular images (not invoices), include the image data
-            if not question_to_llm or not question_to_llm.strip():
-                question_to_llm = "Please analyze this image."
-            langchain_messages.append(HumanMessage(content=[
-                {"type": "text", "text": question_to_llm},
-                {"type": "image_url", "image_url": {"url": f"data:{file_data['file_mimetype']};base64,{file_data['file_content_base64']}"}}
-            ]))
-        elif file_data: # General file handling for non-image/non-pdf that are not processed by RAG
+        elif file_data: # General file handling for non-RAG files (videos, etc. - images are handled above)
             question_to_llm = f"{current_question}\n\n(User provided a file: {file_data['filename']})." if current_question else f"User provided a file: {file_data['filename']}."
             if not question_to_llm or not question_to_llm.strip():
                 question_to_llm = f"User provided a file: {file_data.get('filename', 'unknown file')}."
@@ -1417,6 +1573,8 @@ This format allows users to easily access and verify the sources of the informat
                 "video_data_base64": getattr(chat_entry, 'video_data_base64', None),
                 "video_mime_type": getattr(chat_entry, 'video_mime_type', 'video/mp4'),
                 "filename": getattr(chat_entry, 'filename', None),
+                "file_type": getattr(chat_entry, 'file_type', None),  # Add direct file_type access
+                "mime_type": file_info.get("mime_type") if file_info else None,  # Add direct mime_type access
                 "file_info": file_info  # Add the enhanced file metadata
             }
             chat_data.append(chat_dict)

@@ -5,29 +5,36 @@ from typing import Dict, List, Any, Optional
 from bs4 import BeautifulSoup
 import time
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, parse_qs
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import langdetect
+import random
 
 # Set up logging configuration
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class WebSearchService:
     def __init__(self):
         """Initialize the WebSearchService with proper configurations"""
         self.session = self._create_session()
-        self.search_engines = {
-            'duckduckgo': 'https://duckduckgo.com/html/?q=',
-            'bing': 'https://www.bing.com/search?q='
+        
+        # We will now exclusively use a custom DuckDuckGo scraper
+        self.search_providers = {
+            'duckduckgo_scrape': self._search_with_duckduckgo_scraper,
         }
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-        }
+        
+        self.duckduckgo_url = 'https://duckduckgo.com/html/?q='
+        
+        # A pool of user agents to rotate for better anonymity
+        self.user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:89.0) Gecko/20100101 Firefox/89.0',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        ]
         
     def _create_session(self) -> requests.Session:
         """Create a requests session with retry strategy"""
@@ -45,45 +52,29 @@ class WebSearchService:
 
     def is_web_search_query(self, query: str) -> bool:
         """
-        Determine if a query requires web search based on keywords and patterns
+        (This method remains the same)
         """
         logger.info(f"🔍 WEB SEARCH DETECTION | Query: '{query}'")
         
         web_search_indicators = [
-            # Time-sensitive queries
             'latest', 'recent', 'current', 'today', 'now', 'this week', 'this month', 'this year',
             'updated', 'new', 'breaking', 'fresh', 'this season', 'this time', '2024', '2025',
-            
-            # News and events
             'news', 'headlines', 'breaking news', 'current events', 'happening',
-            
-            # Real-time information
             'price', 'stock', 'weather', 'temperature', 'forecast',
             'exchange rate', 'currency', 'bitcoin', 'crypto',
-            
-            # Search intent words
             'search for', 'find information about', 'look up', 'google',
             'what is happening', 'what\'s new', 'tell me about recent',
-            
-            # Specific domains that change frequently
             'github', 'stackoverflow', 'reddit', 'twitter', 'facebook',
             'wikipedia', 'youtube', 'instagram',
-            
-            # Technology and trends
             'trending', 'viral', 'popular', 'top rated', 'best of',
             'review', 'comparison', 'versus', 'vs',
-            
-            # Sports and competitions (time-sensitive)
             'winner', 'champion', 'championship', 'tournament', 'final', 'match result',
             'ipl', 'world cup', 'olympics', 'premier league', 'nba', 'nfl', 'fifa',
             'score', 'result', 'standings', 'league table', 'season',
-            
-            # Questions that likely need current data
             'who is', 'what is', 'where is', 'when did', 'how to',
             'status of', 'information about', 'details about', 'who won', 'who wins'
         ]
         
-        # Exclude queries that are clearly about uploaded files or internal data
         exclude_indicators = [
             'uploaded file', 'this file', 'document', 'pdf', 'above file',
             'according to', 'based on the file', 'from the document',
@@ -91,94 +82,155 @@ class WebSearchService:
         ]
         
         query_lower = query.lower()
-        logger.info(f"🔍 Query (lowercase): '{query_lower}'")
         
-        # Check for exclusion first
         for exclude_term in exclude_indicators:
             if exclude_term in query_lower:
                 logger.info(f"❌ WEB SEARCH EXCLUDED - Found exclusion term: '{exclude_term}'")
                 return False
         
-        # Check for web search indicators
-        matched_indicators = []
         for indicator in web_search_indicators:
             if indicator in query_lower:
-                matched_indicators.append(indicator)
+                logger.info(f"✅ WEB SEARCH TRIGGERED - Matched indicator: '{indicator}'")
+                return True
         
-        if matched_indicators:
-            logger.info(f"✅ WEB SEARCH TRIGGERED - Matched indicators: {matched_indicators}")
-            return True
-        
-        # Additional pattern matching
-        # Questions that start with common question words and seem to ask for current info
         question_patterns = [
             r'^what.*(latest|current|new|recent)',
-            r'^who is.*(?!in|from|mentioned|discussed)',  # "who is" but not about documents
-            r'^who.*(winner|champion|won|wins)',  # Sports winners
+            r'^who is.*(?!in|from|mentioned|discussed)',
+            r'^who.*(winner|champion|won|wins)',
             r'^when did.*(?!the|this|mentioned)',
             r'^how.*(current|latest|now|today)',
             r'^where.*(current|latest|now|today)',
-            r'winner.*season',  # "winner of this season"
-            r'champion.*\d{4}',  # "champion 2024/2025"
-            r'ipl.*season',     # IPL season related
+            r'winner.*season',
+            r'champion.*\d{4}',
+            r'ipl.*season',
             r'who won.*tournament',
             r'result.*match'
         ]
         
-        matched_patterns = []
         for pattern in question_patterns:
             if re.search(pattern, query_lower):
-                matched_patterns.append(pattern)
-        
-        if matched_patterns:
-            logger.info(f"✅ WEB SEARCH TRIGGERED - Matched patterns: {matched_patterns}")
-            return True
+                logger.info(f"✅ WEB SEARCH TRIGGERED - Matched pattern: '{pattern}'")
+                return True
         
         logger.info(f"❌ WEB SEARCH NOT TRIGGERED - No matches found")
         return False
+    
+    def _get_headers(self):
+        """Returns a random user agent from the list."""
+        headers = {
+            'User-Agent': random.choice(self.user_agents),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Referer': 'https://duckduckgo.com/' 
+        }
+        return headers
 
-    def search_web(self, query: str, max_results: int = 3, engine: str = 'duckduckgo') -> Dict[str, Any]:
-        """
-        Perform web search and return structured results
-        """
-        logger.info(f"🌐 WEB SEARCH INITIATED | Query: '{query}' | Engine: {engine}")
-        start_time = time.time()
-        
+    def _search_with_duckduckgo_scraper(self, query: str, max_results: int) -> List[Dict[str, str]]:
+        """Perform search by scraping DuckDuckGo's HTML page."""
         try:
-            if engine not in self.search_engines:
-                engine = 'duckduckgo'  # fallback
-            
-            search_url = self.search_engines[engine] + query
+            search_url = self.duckduckgo_url + requests.utils.quote(query)
             
             response = self.session.get(
                 search_url,
-                headers=self.headers,
-                timeout=10
+                headers=self._get_headers(),
+                timeout=10,
+                verify=True
             )
             response.raise_for_status()
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+            results = []
             
-            if engine == 'duckduckgo':
-                results = self._parse_duckduckgo_results(response.text, max_results)
-            elif engine == 'bing':
-                results = self._parse_bing_results(response.text, max_results)
-            else:
-                results = []
+            # Updated selectors based on current DuckDuckGo HTML structure
+            result_divs = soup.find_all('div', class_='result')
             
-            # Scrape content from top results
+            for div in result_divs[:max_results]:
+                title_elem = div.find('a', class_='result__a')
+                snippet_elem = div.find('a', class_='result__snippet')
+                
+                if title_elem:
+                    title = title_elem.get_text(strip=True) if title_elem else ''
+                    url = title_elem.get('href', '')
+                    snippet = snippet_elem.get_text(strip=True) if snippet_elem else ''
+                    
+                    if url.startswith('/l/?uddg='):
+                        try:
+                            parsed = parse_qs(url.split('?')[1])
+                            if 'uddg' in parsed:
+                                url = unquote(parsed['uddg'][0])
+                        except Exception as e:
+                            logger.warning(f"Failed to clean up DDG URL: {url} | Error: {e}")
+                            
+                    if title and url:
+                        results.append({
+                            'title': title,
+                            'url': url,
+                            'snippet': snippet
+                        })
+            
+            return results
+        except Exception as e:
+            logger.error(f"❌ DuckDuckGo Scraper failed for query '{query}': {e}")
+            return []
+            
+    def search_web(self, query: str, max_results: int = 3) -> Dict[str, Any]:
+        """
+        Perform web search using only the DuckDuckGo scraper.
+        """
+        engine = 'duckduckgo_scrape'
+        logger.info(f"🌐 WEB SEARCH INITIATED | Query: '{query}' | Using Engine: {engine}")
+        start_time = time.time()
+        
+        try:
+            results = self._search_with_duckduckgo_scraper(query, max_results)
+            
+            if not results:
+                logger.warning(f"❌ SEARCH PROVIDER FAILED or ZERO RESULTS | Engine: {engine}.")
+                # If no results from DDG, there is no fallback, so we fail
+                return {
+                    "status": "error",
+                    "message": f"DuckDuckGo failed to return results for the query.",
+                    "query": query,
+                    "results": []
+                }
+            
             enriched_results = []
             for i, result in enumerate(results[:max_results]):
+                if any(domain in result['url'] for domain in ['.cn', '.jp', '.ru', 'baidu.com', 'zhihu.com']):
+                    logger.warning(f"⚠️ SKIPPING | Irrelevant domain detected: {result['url']}")
+                    continue
+                
                 try:
+                    time.sleep(random.uniform(1, 3))
                     content = self._scrape_webpage_content(result['url'])
-                    result['scraped_content'] = content
-                    enriched_results.append(result)
-                    logger.info(f"📄 SCRAPED CONTENT | URL: {result['url'][:60]}... | Content length: {len(content)} chars")
+                    
+                    if content and ('en' in langdetect.detect(content[:500]) or not any(char.isalpha() for char in content[:500])):
+                        result['scraped_content'] = content
+                        enriched_results.append(result)
+                        logger.info(f"📄 SCRAPED CONTENT | URL: {result['url'][:60]}... | Content length: {len(content)} chars")
+                    else:
+                        logger.warning(f"⚠️ SKIPPING | Non-English or empty content detected from {result['url']}")
+                        result['scraped_content'] = result.get('snippet', '')
+                        enriched_results.append(result)
                 except Exception as e:
                     logger.warning(f"⚠️ SCRAPING FAILED | URL: {result['url']} | Error: {str(e)}")
                     result['scraped_content'] = result.get('snippet', '')
                     enriched_results.append(result)
+
+            if not enriched_results:
+                 logger.warning(f"❌ ALL SCRAPED RESULTS FAILED | Engine: {engine}.")
+                 return {
+                    "status": "error",
+                    "message": "Scraping failed for all results found by DuckDuckGo.",
+                    "query": query,
+                    "results": []
+                }
             
             end_time = time.time()
-            logger.info(f"✅ WEB SEARCH COMPLETED | Results: {len(enriched_results)} | Time: {end_time - start_time:.2f}s")
+            logger.info(f"✅ WEB SEARCH COMPLETED | Results: {len(enriched_results)} | Time: {end_time - start_time:.2f}s | Engine: {engine}")
             
             return {
                 "status": "success",
@@ -187,120 +239,41 @@ class WebSearchService:
                 "search_time": end_time - start_time,
                 "engine_used": engine
             }
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ WEB SEARCH NETWORK ERROR | Query: '{query}' | Error: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"Network error during web search: {str(e)}",
-                "query": query
-            }
+        
         except Exception as e:
-            logger.error(f"❌ WEB SEARCH ERROR | Query: '{query}' | Error: {str(e)}")
+            logger.error(f"❌ WEB SEARCH UNEXPECTED ERROR | Engine: {engine} | Error: {str(e)}.")
             return {
                 "status": "error",
-                "message": f"Error during web search: {str(e)}",
-                "query": query
+                "message": f"Unexpected error during web search: {str(e)}",
+                "query": query,
+                "results": []
             }
-
-    def _parse_duckduckgo_results(self, html_content: str, max_results: int) -> List[Dict[str, str]]:
-        """Parse DuckDuckGo search results"""
-        soup = BeautifulSoup(html_content, 'html.parser')
-        results = []
-        
-        # DuckDuckGo HTML structure
-        result_divs = soup.find_all('div', class_='result__body')
-        
-        for div in result_divs[:max_results]:
-            try:
-                title_elem = div.find('a', class_='result__a')
-                snippet_elem = div.find('a', class_='result__snippet')
-                
-                if title_elem:
-                    title = title_elem.get_text(strip=True)
-                    url = title_elem.get('href', '')
-                    snippet = snippet_elem.get_text(strip=True) if snippet_elem else ''
-                    
-                    # Clean up the URL if it's a DuckDuckGo redirect
-                    if url.startswith('/l/?uddg='):
-                        # Extract the actual URL from DuckDuckGo's redirect
-                        import urllib.parse
-                        parsed = urllib.parse.parse_qs(url.split('?')[1])
-                        if 'uddg' in parsed:
-                            url = urllib.parse.unquote(parsed['uddg'][0])
-                    
-                    if title and url:
-                        results.append({
-                            'title': title,
-                            'url': url,
-                            'snippet': snippet
-                        })
-            except Exception as e:
-                logger.warning(f"⚠️ Error parsing DuckDuckGo result: {e}")
-                continue
-        
-        return results
-
-    def _parse_bing_results(self, html_content: str, max_results: int) -> List[Dict[str, str]]:
-        """Parse Bing search results"""
-        soup = BeautifulSoup(html_content, 'html.parser')
-        results = []
-        
-        # Bing HTML structure
-        result_divs = soup.find_all('li', class_='b_algo')
-        
-        for div in result_divs[:max_results]:
-            try:
-                title_elem = div.find('h2')
-                url_elem = title_elem.find('a') if title_elem else None
-                snippet_elem = div.find('div', class_='b_caption')
-                
-                if url_elem:
-                    title = title_elem.get_text(strip=True)
-                    url = url_elem.get('href', '')
-                    snippet = snippet_elem.get_text(strip=True) if snippet_elem else ''
-                    
-                    if title and url:
-                        results.append({
-                            'title': title,
-                            'url': url,
-                            'snippet': snippet
-                        })
-            except Exception as e:
-                logger.warning(f"⚠️ Error parsing Bing result: {e}")
-                continue
-        
-        return results
 
     def _scrape_webpage_content(self, url: str, max_chars: int = 2000) -> str:
         """
-        Scrape main content from a webpage
+        Scrape main content from a webpage.
         """
         try:
+            scrape_headers = self._get_headers()
+            scrape_headers['Referer'] = url
+            
             response = self.session.get(
                 url,
-                headers=self.headers,
+                headers=scrape_headers,
                 timeout=8,
-                allow_redirects=True
+                allow_redirects=True,
+                verify=True
             )
             response.raise_for_status()
             
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Remove script and style elements
             for script in soup(["script", "style", "nav", "header", "footer", "aside"]):
                 script.decompose()
             
-            # Try to find main content areas
             content_selectors = [
-                'article',
-                'main',
-                '[role="main"]',
-                '.content',
-                '.main-content',
-                '.post-content',
-                '.entry-content',
-                '.article-content'
+                'article', 'main', '[role="main"]', '.content', '.main-content',
+                '.post-content', '.entry-content', '.article-content'
             ]
             
             content = ""
@@ -310,29 +283,33 @@ class WebSearchService:
                     content = ' '.join([elem.get_text(strip=True) for elem in elements])
                     break
             
-            # Fallback to body content if no specific content area found
             if not content:
                 body = soup.find('body')
                 if body:
                     content = body.get_text(strip=True)
             
-            # Clean up the content
-            content = re.sub(r'\s+', ' ', content)  # Replace multiple spaces with single space
+            content = re.sub(r'\s+', ' ', content)
             content = content.strip()
             
-            # Limit content length
             if len(content) > max_chars:
                 content = content[:max_chars] + "..."
             
             return content
             
-        except Exception as e:
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                logger.warning(f"⚠️ Scraping failed for {url}: 403 Forbidden. Website actively blocked access.")
+                return "SCRAPING FAILED: Website actively blocked access (403 Forbidden)."
+            else:
+                logger.warning(f"⚠️ Failed to scrape content from {url}: HTTP Error {e.response.status_code}")
+                return f"SCRAPING FAILED: HTTP Error {e.response.status_code}."
+        except requests.exceptions.RequestException as e:
             logger.warning(f"⚠️ Failed to scrape content from {url}: {str(e)}")
-            return ""
+            return f"SCRAPING FAILED: {str(e)}"
 
     def format_search_results_for_llm(self, search_results: Dict[str, Any]) -> str:
         """
-        Format search results into a readable format for LLM processing
+        Format search results into a readable format for LLM processing.
         """
         if search_results["status"] != "success":
             return f"Web search failed: {search_results.get('message', 'Unknown error')}"
@@ -348,14 +325,15 @@ class WebSearchService:
             formatted_results += f"Title: {result['title']}\n"
             formatted_results += f"URL: {result['url']}\n"
             
-            if result.get('scraped_content'):
+            if result.get('scraped_content') and not result['scraped_content'].startswith("SCRAPING FAILED"):
                 content = result['scraped_content']
-                # Limit content per result to keep it manageable
                 if len(content) > 800:
                     content = content[:800] + "..."
                 formatted_results += f"Content: {content}\n"
             elif result.get('snippet'):
                 formatted_results += f"Snippet: {result['snippet']}\n"
+            else:
+                 formatted_results += f"Content: {result.get('scraped_content', 'Could not retrieve content.')}\n"
             
             formatted_results += "\n" + "-" * 50 + "\n\n"
         
