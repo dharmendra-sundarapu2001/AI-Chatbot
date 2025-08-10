@@ -59,65 +59,47 @@ class ChatService:
             "Content-Type": "application/json"
         }
         
-        # System prompt for AI behavior - MODIFIED FOR TOOL USAGE EMPHASIS
+        # System prompt for AI behavior - OPTIMIZED FOR CLEAR TOOL USAGE
         self.SYSTEM_PROMPT = """You are a helpful AI assistant with the following capabilities:
 
-1.  **Rich Text Formatting**: Use markdown formatting for better readability
-2.  **Code Display**: Present code with proper syntax highlighting using code blocks
-3.  **Structured Data**: Create tables for data presentation, comparisons, lists, etc.
-4.  **Mathematical Content**: Render mathematical formulas and equations using LaTeX notation
-5.  **Visual Content**: Generate images when requested using available tools
-6.  **Document Analysis**: Analyze and provide insights from uploaded documents (PDFs, Excel, Word, etc.)
-7.  **Organized Information**: Structure responses with headings, lists, and logical flow
+1. **Rich Text Formatting**: Use markdown formatting for better readability
+2. **Code Display**: Present code with proper syntax highlighting using code blocks  
+3. **Structured Data**: Create tables for data presentation, comparisons, lists, etc.
+4. **Mathematical Content**: Render mathematical formulas and equations using LaTeX notation
+5. **Visual Content**: Generate images and videos when requested using available tools
+6. **Document Analysis**: Analyze and provide insights from uploaded documents
+7. **Organized Information**: Structure responses with headings, lists, and logical flow
 
-CRITICAL: When asked to create images or videos, you MUST use the proper tool calls and NOT print function calls as text. 
-DO NOT output text like "generate_image_tool(prompt='...')" or "default_api.generate_image_tool(...)". 
-Instead, you MUST use the proper tool calling mechanism.
+**CRITICAL TOOL USAGE RULES:**
 
-**Document Analysis Guidelines:**
-- When provided with document content, analyze it comprehensively and provide detailed insights
-- For Excel files, identify and explain data patterns, key metrics, and important information
-- For PDFs and Word documents, summarize key points and extract relevant information
-- Always reference the specific document when providing information from uploaded files
-- Present data in well-formatted tables when appropriate
-- Questions about file content (using phrases like "according to the file", "from the document", "based on the data", "which country/person/item", etc.) are ANALYSIS requests, NOT image generation requests
+**IMAGE GENERATION - MANDATORY TOOL USAGE:**
+When a user asks you to generate, create, draw, make, or produce an image, picture, illustration, or visual content, you MUST immediately call the generate_image_tool. This includes requests like:
+- "Generate a snake image which is in water"
+- "Create a picture of..."
+- "Draw me a..."  
+- "Make an image of..."
+- "Show me an image of..."
 
-**Formatting Guidelines:**
-- Use tables for any structured data (periodic tables, comparisons, schedules, etc.)
-- Use code blocks with language specification for code
-- Use LaTeX for mathematical expressions ($ for inline, $$ for block equations)
-- Use appropriate headings to organize longer responses
-- Use lists for step-by-step instructions or itemized information
+**NEVER respond with descriptive text instead of calling the tool. ALWAYS use the tool for image generation requests.**
 
-**Image Generation:**
-- When the user's request **explicitly and specifically** asks for a visual image, diagram, picture, drawing, or illustration to be created or generated, **YOU MUST, WITHOUT ANY TEXTUAL RESPONSE OR CLARIFYING QUESTIONS, IMMEDIATELY INVOKE THE `generate_image_tool`**.
-- This includes ONLY direct image generation requests like "draw me a...", "create a picture of...", "generate an image of...", "make an illustration of...", "I want you to draw...", "please create a visual of...", or "design an image of...".
-- **DO NOT** generate images for questions about document content, data analysis, file information, or general inquiries that happen to use words like "show me", "visualize", or "which". These are informational requests, not image creation requests.
-- **ESPECIALLY DO NOT** generate images for questions that use phrases like "according to the file", "based on the document", "from the data", "which country", "what is", "who is", etc. These are data inquiry questions, NOT image creation requests.
-- **CRITICAL INSTRUCTION FOR TOOL ARGUMENT (`prompt`):** When calling the `generate_image_tool`, the `prompt` argument **must be a highly detailed, descriptive, and creative textual representation of the desired image.**
-    - **You MUST automatically infer and elaborate on any missing details from the user's request, creating a rich and imaginative scene. Focus heavily on positive descriptions for lighting and color.** For example, if the user says "beach view image", you should automatically generate a detailed prompt like: "An **ultra-photorealistic** image capturing a **breathtaking tropical beach at golden hour sunset**. The scene is bathed in **warm, glowing light**, casting **long, soft shadows**. The foreground features **crystal-clear, emerald-green ocean waves** gently lapping over **sparkling white sand** adorned with **iridescent seashells**. In the midground, a **richly textured, sun-kissed driftwood log** gleams beside the water's edge. The background showcases **lush, vibrant palm trees**, sharply silhouetted against a sky exploding with **fiery oranges, deep magentas, electric purples, and soft pastel pinks**. The vast ocean reflects the **brilliant, multi-hued sky**, creating a mesmerizing, **serene, and overwhelmingly colorful panorama**. Shot with a **wide-angle lens**, **high dynamic range (HDR)**."
-    - **DO NOT provide any descriptive text *before* invoking the tool.** Your response should be solely the tool call, allowing the tool to execute.
-    - **Always include specifics about:**
-        - **Subject details:** (e.g., "a golden retriever puppy," "a majestic lion," "a vintage car")
-        - **Actions/Activity:** (e.g., "drinking water from a clear glass bowl," "roaming the savanna," "parked on a cobblestone street")
-        - **Setting/Background:** (e.g., "in a sunlit kitchen," "against a vibrant sunset," "in front of an old European building")
-        - **Lighting:** (e.g., "**dynamic lighting**, **cinematic light**, **golden hour**, **soft natural light**, **dramatic backlighting**, **radiant sunbeams**, **glowing ambient light**, **sparkling highlights**")
-        - **Style/Art Medium:** (e.g., "**ultra-photorealistic**, **high detail**, **8k photograph**, **film grain**, **award-winning photograph**, oil painting, digital art, dreamlike, anime style")
-        - **Composition/Angle:** (e.g., "close-up shot," "wide angle," "from a low angle," "bird's-eye view")
-        - **Colors/Mood:** (e.g., "**vibrant colors**, **rich hues**, **saturated tones**, peaceful mood, mysterious atmosphere, **multi-hued**")
-- **After the `generate_image_tool` has successfully executed, then, and ONLY THEN, provide a concise, natural language textual description of the image that was generated. DO NOT mention that the image data is "provided separately" or explain the tool execution process. Simply describe the image content.**
+When calling generate_image_tool, create a detailed, creative prompt that elaborates on the user's request with rich visual details including:
+- Subject details and actions
+- Setting and background 
+- Lighting and mood
+- Style and composition
+- Colors and atmosphere
 
-**Video Generation:**
-- When the user's request **clearly and unequivocally** asks for a video, animation, or anything that can be represented as moving visuals, **YOU MUST, WITHOUT ANY TEXTUAL RESPONSE OR CLARIFYING QUESTIONS, IMMEDIATELY INVOKE THE `generate_video_tool`**.
-- This includes prompts like "generate a video", "create a video", "make a video animation", or "create a video of X".
-- **CRITICAL INSTRUCTION FOR TOOL ARGUMENT (`prompt`):** Similar to image generation, when calling the `generate_video_tool`, the `prompt` argument **must be a highly detailed and descriptive textual representation of the desired video content.**
-    - **You MUST automatically infer and elaborate on any missing details from the user's request, following the same detail guidelines as for image prompts.**
-    - **DO NOT provide any descriptive text *before* invoking the tool.**
-- **After the `generate_video_tool` has successfully executed, then, and ONLY THEN, provide a concise, natural language textual description of the video content and duration. DO NOT mention that the video data is "provided separately" or explain the tool execution process. Simply describe the video content and its approximate duration.**
+Example: For "snake in water" → "A magnificent emerald green snake with iridescent scales gliding gracefully through crystal-clear turquoise water, with sunlight filtering down creating shimmering patterns on its sinuous body, underwater coral reef visible in the background, photorealistic style with dynamic lighting"
 
-Adapt your response format to best serve the user's specific request while maintaining clarity and proper formatting.
-**Crucially, closely examine the provided "Recent conversation history" for context. If the user refers to a previously discussed person, place, or topic implicitly (e.g., "that person," "the place we just talked about," "him/her/it/they from before"), infer the specific entity from the history and continue the conversation about that entity. Always strive to maintain conversational flow and remember key details from prior turns.**
-"""
+**VIDEO GENERATION - MANDATORY TOOL USAGE:**
+When a user asks for a video, animation, or moving visuals, you MUST immediately call the generate_video_tool.
+
+**DOCUMENT ANALYSIS:**
+Questions about file content, data analysis, or uploaded documents are informational requests - respond with text analysis, NOT image generation.
+
+**After tool execution, provide a brief, natural description of what was generated.**
+
+Remember: Use conversation history for context and maintain conversational flow."""
         
         # Initialize LLMs with tools
         self._initialize_llms()
@@ -191,18 +173,14 @@ Adapt your response format to best serve the user's specific request while maint
             Generates an image from a textual prompt using a text-to-image model.
             The image is returned as a base64 encoded string along with its MIME type.
             
-            IMPORTANT USAGE INSTRUCTIONS:
-            1. DIRECTLY INVOKE this tool when the user asks to "generate an image", "create a picture", "draw", etc.
-            2. DO NOT output code or function calls as text - use the proper tool invocation mechanism
-            3. DO NOT write "generate_image_tool(prompt='...')" as text in your response
-            4. Keep the prompt SIMPLE and FAITHFUL to what the user requested
+            USAGE: Call this tool when the user asks to generate, create, draw, or make an image.
+            The 'prompt' should be a detailed, descriptive representation of the desired image.
             
-            Example good prompts:
-            - "A cat wearing a hat"
-            - "A mountain landscape with a lake"
-            - "A simple house with a red roof"
-            
-            The system will automatically simplify overly complex prompts to match the user's intent.
+            Args:
+                prompt: A detailed description of the image to generate
+                
+            Returns:
+                dict: Contains image data, status, and metadata
             """
             return self._generate_image_from_hf_api(prompt)
 
@@ -1346,43 +1324,6 @@ This format allows users to easily access and verify the sources of the informat
             logger.info(f"➡️ SENDING TO LLM ({model_name_for_log}) for initial decision - {user_email}")
             response_from_llm = await current_llm.ainvoke(langchain_messages)
             
-            # Special handling for image generation requests
-            if original_question and any(keyword in original_question.lower() for keyword in ['draw', 'generate image', 'create picture', 'show me']):
-                # Check if the response includes code-like patterns referring to image generation but didn't use proper tool calls
-                content_str = str(response_from_llm.content) if hasattr(response_from_llm, 'content') else ""
-                
-                if ('generate_image_tool' in content_str and 'tool_calls' not in dir(response_from_llm)) or not getattr(response_from_llm, 'tool_calls', None):
-                    logger.info(f"🛠️ MANUAL TOOL EXTRACTION - LLM mentioned tool but didn't call it properly")
-                    # Extract the prompt from the response text
-                    import re
-                    prompt_match = re.search(r"prompt=['\"]([^'\"]+)['\"]", content_str)
-                    
-                    if prompt_match:
-                        extracted_prompt = prompt_match.group(1)
-                        logger.info(f"📝 EXTRACTED PROMPT: '{extracted_prompt}'")
-                        
-                        # Create a simplified version of the tool call
-                        simplified_prompt = self._simplify_image_prompt(extracted_prompt, original_question)
-                        logger.info(f"✨ SIMPLIFIED PROMPT: '{simplified_prompt}'")
-                        
-                        # Generate image using the extracted prompt
-                        tool_result = self._generate_image_from_hf_api(simplified_prompt)
-                        
-                        if tool_result["status"] == "success":
-                            image_data_base64 = tool_result["image_data_base64"]
-                            image_mime_type_from_tool = tool_result.get("image_mime_type", "image/jpeg")
-                            bot_message_content = f"Here's an image of {original_question.lower().replace('draw', '').replace('create', '').replace('generate', '').replace('show me', '').strip()}"
-                            
-                            # Skip further processing
-                            return {
-                                "bot_message_content": bot_message_content,
-                                "image_data_base64": image_data_base64,
-                                "image_mime_type": image_mime_type_from_tool,
-                                "video_data_base64": None,
-                                "video_mime_type": None,
-                                "websearch_info": websearch_info
-                            }
-            
             if response_from_llm.tool_calls:
                 # Log the LLM's decision to call a tool and the prompt it generated
                 logger.info(f"⚙️ LLM ({model_name_for_log}) DECIDED TO CALL TOOL - {user_email}")
@@ -1395,22 +1336,14 @@ This format allows users to easily access and verify the sources of the informat
                     tool_id = tool_call.get("id") if isinstance(tool_call, dict) else getattr(tool_call, "id", None)
                     
                     if tool_name == "generate_image_tool":
-                        # Get the original LLM-generated prompt
+                        # Get the original LLM-generated prompt and use it directly
                         original_prompt = tool_args['prompt']
                         
-                        # Simplify the prompt to be more faithful to the user's request
-                        simplified_prompt = self._simplify_image_prompt(original_prompt, original_question)
+                        # Log the prompt that will be sent to the image generation API
+                        logger.info(f"🎨 USING LLM PROMPT FOR IMAGE GENERATION: '{original_prompt}'")
                         
-                        # Log both the original and simplified prompts
-                        logger.info(f"🖼️ ORIGINAL PROMPT FROM LLM: '{original_prompt}'")
-                        logger.info(f"✨ SIMPLIFIED PROMPT FOR IMAGE: '{simplified_prompt}'")
-                        
-                        # Use the simplified prompt for image generation
-                        tool_result = self._generate_image_from_hf_api(simplified_prompt)
-                        
-                        # Add the original prompt to the result for reference
-                        if isinstance(tool_result, dict):
-                            tool_result["original_prompt"] = original_prompt
+                        # Use the original prompt directly (no simplification)
+                        tool_result = self._generate_image_from_hf_api(original_prompt)
                         
                         langchain_messages.append(ToolMessage(
                             content=str(tool_result),
